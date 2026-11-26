@@ -109,7 +109,7 @@ class MissionEngine {
 
     final sourceIntro = chosenMaterial == null
         ? ''
-        : 'Trabajá directamente con el fragmento seleccionado de "${chosenMaterial.title}". ';
+        : 'Trabajá directamente con el fragmento seleccionado de la Biblioteca: "${chosenMaterial.title}". ';
     final main = switch (phase) {
       0 => GeneratedMission(
           title: 'Recuperación activa: ${chosen.name}',
