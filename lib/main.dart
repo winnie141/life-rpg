@@ -824,12 +824,6 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
                   hintText: 'No se encontró texto legible. Podés escribirlo o corregirlo acá.',
                 ),
               ),
-              if (item.translatedText != null) ...[
-                const SizedBox(height: 14),
-                const Text('Traducción al español', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 6),
-                SelectableText(item.translatedText!),
-              ],
             ],
           )),
         ),
