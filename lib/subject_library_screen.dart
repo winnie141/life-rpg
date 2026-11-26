@@ -83,6 +83,8 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
         onImport: (kind, camera) => _import(subject, kind, camera: camera),
         onEditTopics: () => _editTopics(subject),
         onOpenTopic: (topic) => _openTopic(subject, topic),
+        onEditTopic: _editTopic,
+        onDeleteTopic: _deleteTopic,
         onOpenDocument: _openDocument,
         onReadDocument: _readDocument,
         onDeleteDocument: _deleteDocument,
@@ -381,6 +383,49 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
     controller.dispose();
   }
 
+  Future<void> _editTopic(StudyTopic topic) async {
+    final controller = TextEditingController(text: topic.title);
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Editar tema'),
+        content: TextField(controller: controller, autofocus: true,
+          decoration: const InputDecoration(labelText: 'Nombre del tema')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Guardar')),
+        ],
+      ),
+    );
+    if (saved == true && controller.text.trim().isNotEmpty) {
+      topic.title = controller.text.trim();
+      await _save();
+      if (mounted) setState(() {});
+    }
+    controller.dispose();
+  }
+
+  Future<void> _deleteTopic(StudyTopic topic) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar tema'),
+        content: Text('¿Querés eliminar "' + topic.title + '" y su progreso? Los documentos originales no se borran.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Eliminar')),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      for (final list in _topics.values) {
+        list.removeWhere((item) => item.id == topic.id);
+      }
+      await _save();
+      if (mounted) setState(() {});
+    }
+  }
+
   Future<void> _openTopic(SubjectSection subject, StudyTopic topic) async {
     await Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => _TopicDetailPage(
@@ -441,6 +486,8 @@ class _SubjectDetailPage extends StatefulWidget {
   final Future<void> Function(String kind, bool camera) onImport;
   final Future<void> Function() onEditTopics;
   final Future<void> Function(StudyTopic topic) onOpenTopic;
+  final Future<void> Function(StudyTopic topic) onEditTopic;
+  final Future<void> Function(StudyTopic topic) onDeleteTopic;
   final Future<void> Function(_SubjectDocument doc) onOpenDocument;
   final Future<void> Function(_SubjectDocument doc) onReadDocument;
   final Future<void> Function(_SubjectDocument doc) onDeleteDocument;
@@ -453,6 +500,8 @@ class _SubjectDetailPage extends StatefulWidget {
     required this.onImport,
     required this.onEditTopics,
     required this.onOpenTopic,
+    required this.onEditTopic,
+    required this.onDeleteTopic,
     required this.onOpenDocument,
     required this.onReadDocument,
     required this.onDeleteDocument,
@@ -521,7 +570,18 @@ class _SubjectDetailPageState extends State<_SubjectDetailPage> {
           ...widget.topics.map((topic) => Card(child: ListTile(
             title: Text(topic.title),
             subtitle: Text(topic.currentStageLabel),
-            trailing: const Icon(Icons.chevron_right),
+            trailing: PopupMenuButton<String>(
+              onSelected: (value) {
+                if (value == 'open') widget.onOpenTopic(topic);
+                if (value == 'edit') widget.onEditTopic(topic);
+                if (value == 'delete') widget.onDeleteTopic(topic);
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'open', child: Text('Abrir niveles')),
+                PopupMenuItem(value: 'edit', child: Text('Editar nombre')),
+                PopupMenuItem(value: 'delete', child: Text('Eliminar tema')),
+              ],
+            ),
             onTap: () => widget.onOpenTopic(topic),
           ))),
         ],
