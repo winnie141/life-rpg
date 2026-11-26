@@ -29,7 +29,7 @@ class TopicLearningContent {
       }
       var start = 0;
       while (start < paragraph.length) {
-        var end = (start + maxLength).clamp(0, paragraph.length);
+        var end = (start + maxLength).clamp(0, paragraph.length).toInt();
         if (end < paragraph.length) {
           final boundary = paragraph.lastIndexOf(' ', end);
           if (boundary > start + (maxLength ~/ 2)) end = boundary;
