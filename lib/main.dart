@@ -376,25 +376,33 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
       context: _navigatorKey.currentState!.overlay!.context,
       builder: (ctx) => AlertDialog(
         title: const Text('¿Cómo te fue?'),
-        content: Text(
-          'Antes de registrar el avance de “${mission.title}”, contame '
-          'cuánta ayuda necesitaste. Así el progreso refleja mejor lo que '
-          'realmente dominás.',
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Antes de registrar el avance de “${mission.title}”, contame '
+                'cuánta ayuda necesitaste. Así el progreso refleja mejor lo que '
+                'realmente dominás.',
+              ),
+              const SizedBox(height: 8),
+              _evidenceAction(ctx, MissionEvidence.withExample,
+                  'Necesité mirar un ejemplo',
+                  'La terminé siguiendo un procedimiento.'),
+              _evidenceAction(ctx, MissionEvidence.withHints,
+                  'Con algunas pistas',
+                  'Avancé, pero necesité ayuda en algunos pasos.'),
+              _evidenceAction(ctx, MissionEvidence.independent,
+                  'Por mi cuenta',
+                  'La resolví o expliqué sin mirar la solución.'),
+            ],
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Todavía no la completé'),
+            child: const Text('Cancelar'),
           ),
-          _evidenceAction(ctx, MissionEvidence.withExample,
-              'Necesité mirar un ejemplo',
-              'La terminé siguiendo un procedimiento.'),
-          _evidenceAction(ctx, MissionEvidence.withHints,
-              'Con algunas pistas',
-              'Avancé, pero necesité ayuda en algunos pasos.'),
-          _evidenceAction(ctx, MissionEvidence.independent,
-              'Por mi cuenta',
-              'La resolví o expliqué sin mirar la solución.'),
         ],
       ),
     );
