@@ -40,6 +40,7 @@ class MissionItem {
   String? subjectId;
   int masteryGain;
   bool progressRecorded;
+  String? completionEvidence;
 
   MissionItem({
     required this.id,
@@ -54,6 +55,7 @@ class MissionItem {
     this.subjectId,
     this.masteryGain = 0,
     this.progressRecorded = false,
+    this.completionEvidence,
   });
 
   Map<String, dynamic> toJson() => {
@@ -69,6 +71,7 @@ class MissionItem {
         'subjectId': subjectId,
         'masteryGain': masteryGain,
         'progressRecorded': progressRecorded,
+        'completionEvidence': completionEvidence,
       };
 
   factory MissionItem.fromJson(Map<String, dynamic> json) => MissionItem(
@@ -90,6 +93,7 @@ class MissionItem {
         subjectId: json['subjectId'] as String?,
         masteryGain: json['masteryGain'] as int? ?? 0,
         progressRecorded: json['progressRecorded'] as bool? ?? false,
+        completionEvidence: json['completionEvidence'] as String?,
       );
 }
 
@@ -366,6 +370,85 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
     minutesCtrl.dispose();
   }
 
+
+  Future<MissionEvidence?> _askMissionEvidence(MissionItem mission) {
+    return showDialog<MissionEvidence>(
+      context: _navigatorKey.currentState!.overlay!.context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Cómo te fue?'),
+        content: Text(
+          'Antes de registrar el avance de “${mission.title}”, contame '
+          'cuánta ayuda necesitaste. Así el progreso refleja mejor lo que '
+          'realmente dominás.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Todavía no la completé'),
+          ),
+          _evidenceAction(ctx, MissionEvidence.withExample,
+              'Necesité mirar un ejemplo',
+              'La terminé siguiendo un procedimiento.'),
+          _evidenceAction(ctx, MissionEvidence.withHints,
+              'Con algunas pistas',
+              'Avancé, pero necesité ayuda en algunos pasos.'),
+          _evidenceAction(ctx, MissionEvidence.independent,
+              'Por mi cuenta',
+              'La resolví o expliqué sin mirar la solución.'),
+        ],
+      ),
+    );
+  }
+
+  Widget _evidenceAction(BuildContext dialogContext, MissionEvidence evidence,
+      String title, String subtitle) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(title),
+      subtitle: Text(subtitle),
+      onTap: () => Navigator.pop(dialogContext, evidence),
+    );
+  }
+
+  Future<void> _setMissionCompleted(MissionItem mission, bool completed) async {
+    if (!completed) {
+      setState(() => mission.completed = false);
+      await _saveMissions();
+      return;
+    }
+    if (mission.completed) return;
+
+    MissionEvidence? evidence;
+    if (mission.subjectId != null && !mission.progressRecorded) {
+      evidence = await _askMissionEvidence(mission);
+      if (evidence == null || !mounted) return;
+    }
+
+    setState(() {
+      mission.completed = true;
+      if (evidence != null && !mission.progressRecorded) {
+        final index = _studySubjects.indexWhere(
+          (subject) => subject.id == mission.subjectId,
+        );
+        if (index >= 0) {
+          final subject = _studySubjects[index];
+          final gain = evidenceAdjustedGain(mission.masteryGain, evidence);
+          _studySubjects[index] = StudySubject(
+            id: subject.id,
+            name: subject.name,
+            currentTopic: subject.currentTopic,
+            mastery: (subject.mastery + gain).clamp(0, 100).toInt(),
+            lastPracticedAt: DateTime.now(),
+          );
+          mission.completionEvidence = evidence.name;
+          mission.progressRecorded = true;
+        }
+      }
+    });
+    await _saveMissions();
+    await _saveStudySubjects();
+  }
+
   void _addOrEditMission({MissionItem? existing}) {
     final titleCtrl = TextEditingController(text: existing?.title ?? '');
     final descCtrl = TextEditingController(text: existing?.description ?? '');
@@ -620,33 +703,7 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
             child: ListTile(
               leading: Checkbox(
                 value: m.completed,
-                onChanged: (val) {
-                  final completed = val ?? false;
-                  setState(() {
-                    final wasCompleted = m.completed;
-                    m.completed = completed;
-                    if (completed && !wasCompleted && !m.progressRecorded) {
-                      final subjectIndex = _studySubjects.indexWhere(
-                        (subject) => subject.id == m.subjectId,
-                      );
-                      if (subjectIndex >= 0) {
-                        final subject = _studySubjects[subjectIndex];
-                        _studySubjects[subjectIndex] = StudySubject(
-                          id: subject.id,
-                          name: subject.name,
-                          currentTopic: subject.currentTopic,
-                          mastery: (subject.mastery + m.masteryGain)
-                              .clamp(0, 100)
-                              .toInt(),
-                          lastPracticedAt: DateTime.now(),
-                        );
-                        m.progressRecorded = true;
-                      }
-                    }
-                  });
-                  _saveMissions();
-                  _saveStudySubjects();
-                },
+                onChanged: (val) => _setMissionCompleted(m, val ?? false),
               ),
               title: Text(
                 '${m.isMainQuest ? "[Principal] " : ""}${m.title}',
@@ -656,7 +713,9 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
                 ),
               ),
               subtitle: Text(
-                '${m.area.label} · Prioridad ${m.priority.label}${m.estimatedMinutes != null ? " · ${m.estimatedMinutes} min" : ""}',
+                '${m.area.label} · Prioridad ${m.priority.label}'
+                '${m.estimatedMinutes != null ? " · ${m.estimatedMinutes} min" : ""}'
+                '${m.completionEvidence == null ? "" : " · ${_evidenceLabel(m.completionEvidence!)}"}',
               ),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -679,6 +738,19 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
         ),
       ],
     );
+  }
+
+  String _evidenceLabel(String value) {
+    switch (value) {
+      case 'independent':
+        return 'Resuelta sin ayuda';
+      case 'withHints':
+        return 'Resuelta con pistas';
+      case 'withExample':
+        return 'Resuelta con ejemplo';
+      default:
+        return 'Evidencia registrada';
+    }
   }
 
   Widget _buildMapView() {
