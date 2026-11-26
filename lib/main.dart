@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'mission_engine.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -130,6 +131,11 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   static const String _missionsKey = 'life_rpg_missions_v1';
   static const String _notesKey = 'life_rpg_notes_v1';
+  static const String _subjectsKey = 'life_rpg_subjects_v1';
+  static const String _dailyMinutesKey = 'life_rpg_daily_minutes_v1';
+  final MissionEngine _missionEngine = const MissionEngine();
+  List<StudySubject> _studySubjects = [];
+  int _dailyMinutes = 45;
 
   int _selectedIndex = 0;
   DateTime _selectedDate = DateTime.now();
@@ -147,6 +153,8 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
     final prefs = await SharedPreferences.getInstance();
     final rawMissions = prefs.getString(_missionsKey);
     final rawNotes = prefs.getString(_notesKey);
+    final rawSubjects = prefs.getString(_subjectsKey);
+    final savedMinutes = prefs.getInt(_dailyMinutesKey) ?? 45;
 
     List<MissionItem> loadedMissions = [];
     if (rawMissions != null && rawMissions.isNotEmpty) {
@@ -164,11 +172,22 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
           .toList();
     }
 
+    List<StudySubject> loadedSubjects = [];
+    if (rawSubjects != null && rawSubjects.isNotEmpty) {
+      final decoded = jsonDecode(rawSubjects) as List<dynamic>;
+      loadedSubjects = decoded
+          .map((item) => StudySubject.fromJson(item as Map<String, dynamic>))
+          .toList();
+    }
+
     setState(() {
       _missions = loadedMissions;
       _notes = loadedNotes;
+      _studySubjects = loadedSubjects;
+      _dailyMinutes = savedMinutes;
       _loading = false;
     });
+    await _ensureDailyMissions();
   }
 
   Future<void> _saveMissions() async {
@@ -185,6 +204,135 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
       _notesKey,
       jsonEncode(_notes.map((n) => n.toJson()).toList()),
     );
+  }
+
+  Future<void> _ensureDailyMissions() async {
+    if (_studySubjects.isEmpty) return;
+    final todayKey = dateToKey(DateTime.now());
+    final alreadyGenerated = _missions.any((m) => m.dayKey == todayKey);
+    if (alreadyGenerated) return;
+
+    final generated = _missionEngine.generateDaily(
+      subjects: _studySubjects,
+      date: DateTime.now(),
+      availableMinutes: _dailyMinutes,
+    );
+    if (generated.isEmpty) return;
+
+    setState(() {
+      _missions.addAll(generated.map((draft) => MissionItem(
+            id: DateTime.now().microsecondsSinceEpoch.toString() +
+                draft.subjectId +
+                draft.title.hashCode.toString(),
+            title: draft.title,
+            description: draft.description,
+            area: LifeArea.knowledge,
+            priority: draft.isMainQuest
+                ? MissionPriority.high
+                : MissionPriority.medium,
+            isMainQuest: draft.isMainQuest,
+            completed: false,
+            estimatedMinutes: draft.estimatedMinutes,
+            dayKey: todayKey,
+          )));
+    });
+    await _saveMissions();
+  }
+
+  Future<void> _configureStudyRoute() async {
+    final subjectsCtrl = TextEditingController(
+      text: _studySubjects
+          .map((s) => s.currentTopic.trim().isEmpty
+              ? s.name
+              : '${s.name} | ${s.currentTopic}')
+          .join('\n'),
+    );
+    final minutesCtrl = TextEditingController(text: _dailyMinutes.toString());
+    final dialogContext = _navigatorKey.currentState!.overlay!.context;
+    final confirmed = await showDialog<bool>(
+      context: dialogContext,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Configurar mi ruta'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'La app usa estos datos para elegir qué conviene practicar. '
+                'Una materia por línea. Podés agregar el tema actual después de |.',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: subjectsCtrl,
+                minLines: 3,
+                maxLines: 6,
+                decoration: const InputDecoration(
+                  labelText: 'Materias u objetivos de aprendizaje',
+                  hintText: 'Física | Dinámica\nÁlgebra | Autovalores',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: minutesCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Minutos disponibles por día',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Guardar ruta'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final parsed = subjectsCtrl.text
+          .split('\n')
+          .map((line) => line.trim())
+          .where((line) => line.isNotEmpty)
+          .map((line) {
+        final parts = line.split('|');
+        final name = parts.first.trim();
+        final topic = parts.length > 1 ? parts.sublist(1).join('|').trim() : '';
+        final previous = _studySubjects.where(
+          (subject) => subject.name.toLowerCase() == name.toLowerCase(),
+        );
+        final old = previous.isEmpty ? null : previous.first;
+        return StudySubject(
+          id: old?.id ?? DateTime.now().microsecondsSinceEpoch.toString() + name,
+          name: name,
+          currentTopic: topic,
+          mastery: old?.mastery ?? 35,
+          lastPracticedAt: old?.lastPracticedAt,
+        );
+      }).toList();
+      final parsedMinutes = int.tryParse(minutesCtrl.text.trim()) ?? 45;
+      setState(() {
+        _studySubjects = parsed;
+        _dailyMinutes = parsedMinutes.clamp(10, 240);
+      });
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _subjectsKey,
+        jsonEncode(_studySubjects.map((s) => s.toJson()).toList()),
+      );
+      await prefs.setInt(_dailyMinutesKey, _dailyMinutes);
+      await _ensureDailyMissions();
+    }
+    subjectsCtrl.dispose();
+    minutesCtrl.dispose();
   }
 
   void _addOrEditMission({MissionItem? existing}) {
@@ -417,11 +565,22 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
         Text('Completadas hoy: $completedCount / ${dayMissions.length}'),
         const SizedBox(height: 12),
         if (dayMissions.isEmpty)
-          const Card(
+          Card(
             child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Text(
-                'Sin misiones registradas para este día. Tocá + para crear una.',
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Todavía no hay una ruta configurada. Configurá tus materias y la app va a generar misiones según tus prioridades.',
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: _configureStudyRoute,
+                    icon: const Icon(Icons.auto_awesome),
+                    label: const Text('Configurar mi ruta'),
+                  ),
+                ],
               ),
             ),
           ),
@@ -585,7 +744,16 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
         useMaterial3: true,
       ),
       home: Scaffold(
-        appBar: AppBar(title: const Text('LIFE RPG')),
+        appBar: AppBar(
+          title: const Text('LIFE RPG'),
+          actions: [
+            IconButton(
+              tooltip: 'Configurar ruta',
+              onPressed: _configureStudyRoute,
+              icon: const Icon(Icons.tune),
+            ),
+          ],
+        ),
         body: _loading
             ? const Center(child: CircularProgressIndicator())
             : screens[_selectedIndex],
