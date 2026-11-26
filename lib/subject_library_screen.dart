@@ -309,6 +309,9 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
             format: pdfx.PdfPageImageFormat.jpeg,
             backgroundColor: '#ffffff',
           );
+          if (image == null) {
+            continue;
+          }
           final imageFile = File(
             '${tempDirectory.path}/life_rpg_ocr_${DateTime.now().microsecondsSinceEpoch}_$pageNumber.jpg',
           );
