@@ -338,19 +338,31 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
   }
 
   Future<void> _refreshTodayMissionsFromLibrary() async {
-    final hasExtractedMaterial =
-        _documents.any((item) => (item.extractedText ?? '').trim().isNotEmpty) ||
-        _notes.any((item) => item.content.trim().isNotEmpty);
-    if (!hasExtractedMaterial) {
+    final materials = <StudyMaterial>[
+      ..._documents.where((item) => (item.extractedText ?? '').trim().isNotEmpty).map((item) => StudyMaterial(
+            title: item.title, subject: item.subject, topic: item.topic, text: item.extractedText!,
+          )),
+      ..._notes.where((item) => item.content.trim().isNotEmpty).map((item) => StudyMaterial(
+            title: item.title, subject: item.subject, topic: item.topic, text: item.content,
+          )),
+    ];
+    final hasMatchingMaterial = _studySubjects.any((subject) => materials.any((material) {
+      if (material.subject.trim().toLowerCase() != subject.name.trim().toLowerCase()) return false;
+      final wantedTopic = subject.currentTopic.trim().toLowerCase();
+      final materialTopic = material.topic.trim().toLowerCase();
+      return wantedTopic.isEmpty || materialTopic.isEmpty ||
+          wantedTopic.contains(materialTopic) || materialTopic.contains(wantedTopic);
+    }));
+    if (!hasMatchingMaterial) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Primero agregá un PDF, una foto o una nota con texto en la Biblioteca.')),
+        const SnackBar(content: Text('No encontré texto que coincida con las materias y temas de tu ruta. Revisá esos nombres en la Biblioteca.')),
       );
       return;
     }
     await _ensureDailyMissions(refresh: true);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Misiones actualizadas. Tocá una misión para ver su material de referencia.')),
+        const SnackBar(content: Text('Misiones actualizadas con material coincidente. Tocá una misión para ver su fuente.')),
       );
     }
   }
