@@ -224,7 +224,7 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<LifeArea>(
-                      value:,
+                      value: selectedArea,
                       decoration: const InputDecoration(labelText: 'Área'),
                       items: LifeArea.values
                           .map(
@@ -239,7 +239,7 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
                       },
                     ),
                     DropdownButtonFormField<MissionPriority>(
-                      value:,
+                      value: selectedPriority,
                       decoration: const InputDecoration(labelText: 'Prioridad'),
                       items: MissionPriority.values
                           .map(
