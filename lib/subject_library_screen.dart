@@ -116,6 +116,7 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
       originalName = photo.name;
     }
 
+    if (!mounted) return;
     final titleController = TextEditingController(text: originalName);
     final accepted = await showDialog<bool>(
       context: context,
