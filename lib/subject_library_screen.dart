@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 import 'study_structure.dart';
+import 'topic_learning_content.dart';
 
 class SubjectLibraryScreen extends StatefulWidget {
   const SubjectLibraryScreen({super.key});
@@ -783,11 +784,8 @@ class _TopicDetailPage extends StatefulWidget {
   final Future<void> Function(_SubjectDocument doc) onRead;
 
   const _TopicDetailPage({
-    required this.subject,
-    required this.topic,
-    required this.documents,
-    required this.onSave,
-    required this.onRead,
+    required this.subject, required this.topic, required this.documents,
+    required this.onSave, required this.onRead,
   });
 
   @override
@@ -795,92 +793,328 @@ class _TopicDetailPage extends StatefulWidget {
 }
 
 class _TopicDetailPageState extends State<_TopicDetailPage> {
+  static const _content = TopicLearningContent();
+  final TextEditingController _answerController = TextEditingController();
+  bool _showReference = false;
+
+  List<_SubjectDocument> get _withText => widget.documents
+      .where((doc) => (doc.extractedText ?? '').trim().isNotEmpty).toList();
+
+  List<StudyTextSection> _sections(_SubjectDocument doc) =>
+      _content.sections(doc.extractedText ?? '');
+
   @override
-  Widget build(BuildContext context) {
+  void dispose() {
+    _answerController.dispose();
+    super.dispose();
+  }
+
+  Widget _header() {
     final topic = widget.topic;
-    return Scaffold(
-      appBar: AppBar(title: Text(topic.title)),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(widget.subject.title, style: Theme.of(context).textTheme.labelLarge),
-          const SizedBox(height: 6),
-          Text('Progreso de comprensión', style: Theme.of(context).textTheme.titleLarge),
+    return Card(child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(widget.subject.title, style: Theme.of(context).textTheme.labelLarge),
+        const SizedBox(height: 4),
+        Text(topic.title, style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: LinearProgressIndicator(value: topic.achievedStage / 4)),
+          const SizedBox(width: 12),
+          Text(topic.achievedStage.toString() + '/4'),
+        ]),
+        const SizedBox(height: 6),
+        Text(topic.achievedStage == 4 ? 'Tema integrado' :
+          topic.achievedStage == 0 ? 'Empezá por aprender el contenido' :
+          'Último nivel registrado: ' + topic.currentStageLabel),
+        const SizedBox(height: 8),
+        Text(widget.documents.length.toString() + ' material(es) asociado(s) · ' +
+          _withText.length.toString() + ' con texto disponible',
+          style: Theme.of(context).textTheme.bodySmall),
+      ]),
+    ));
+  }
+
+  Widget _empty(String message) => Card(child: Padding(
+    padding: const EdgeInsets.all(16),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Icon(Icons.menu_book_outlined, size: 30),
+      const SizedBox(height: 8),
+      Text(message),
+      const SizedBox(height: 8),
+      const Text('Volvé a la materia y asociá un apunte o una guía a este tema. Si ya está asociado, usá “Leer / editar texto” para extraer el texto del PDF o de la foto.'),
+    ]),
+  ));
+
+  Widget _learn() {
+    if (widget.documents.isEmpty) {
+      return ListView(padding: const EdgeInsets.all(16), children: [
+        _header(), _empty('Este tema todavía no tiene documentos asociados.'),
+      ]);
+    }
+    return ListView(padding: const EdgeInsets.all(16), children: [
+      _header(),
+      const Text('Leé el material de a poco. La app conserva el texto original y lo separa en fragmentos para estudiar sin perder la fuente.',
+        style: TextStyle(height: 1.4)),
+      const SizedBox(height: 12),
+      ...widget.documents.map((doc) {
+        final parts = _sections(doc);
+        return Card(child: ExpansionTile(
+          initiallyExpanded: widget.documents.length == 1,
+          leading: Icon(doc.category == 'guide' ? Icons.assignment_outlined : Icons.menu_book_outlined),
+          title: Text(doc.title),
+          subtitle: Text(parts.isEmpty ? 'Texto pendiente de extracción' :
+            parts.length.toString() + ' fragmento(s) de material'),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: parts.isEmpty ? [
+            const Align(alignment: Alignment.centerLeft, child: Text(
+              'No hay texto extraído. Si es un PDF escaneado o una foto, el reconocimiento puede necesitar correcciones.')),
+            Align(alignment: Alignment.centerLeft, child: TextButton.icon(
+              onPressed: () async { await widget.onRead(doc); if (mounted) setState(() {}); },
+              icon: const Icon(Icons.text_snippet_outlined),
+              label: const Text('Leer y preparar material'))),
+          ] : parts.map((part) => Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(top: 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Fragmento ' + part.index.toString(),
+                style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: 6),
+              SelectableText(part.text),
+            ]),
+          )).toList(),
+        ));
+      }),
+    ]);
+  }
+
+  Widget _understand() {
+    if (_withText.isEmpty) {
+      return ListView(padding: const EdgeInsets.all(16), children: [
+        _header(), _empty('Para trabajar la comprensión primero necesitamos texto extraído del material.'),
+      ]);
+    }
+    final parts = _withText.expand((doc) =>
+      _sections(doc).map((part) => (doc: doc, part: part))).toList();
+    return ListView(padding: const EdgeInsets.all(16), children: [
+      _header(),
+      const Text('No busques repetir el apunte. Intentá reconstruir la idea y explicar qué significa.',
+        style: TextStyle(height: 1.4)),
+      const SizedBox(height: 12),
+      ...parts.map((item) => Card(child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(item.doc.title, style: Theme.of(context).textTheme.labelLarge),
           const SizedBox(height: 8),
-          LinearProgressIndicator(value: topic.achievedStage / 4),
+          SelectableText(item.part.text),
+          const Divider(height: 22),
+          const Text('Ahora respondé sin copiar:', style: TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
-          Text('${topic.achievedStage} de 4 niveles registrados'),
-          const SizedBox(height: 16),
-          ...MasteryStage.values.asMap().entries.map((entry) {
-            final index = entry.key + 1;
-            final stage = entry.value;
-            final achieved = topic.achievedStage >= index;
-            return Card(
-              child: ExpansionTile(
-                leading: Icon(achieved ? Icons.check_circle : Icons.circle_outlined,
-                  color: achieved ? Colors.green : null),
-                title: Text(stage.title),
-                subtitle: Text(stage.description),
-                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                children: [
-                  Text(_stagePrompt(index)),
-                  if (widget.documents.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text('Material relacionado', style: Theme.of(context).textTheme.titleSmall),
-                    ),
-                    ...widget.documents.map((doc) => ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.description_outlined),
-                      title: Text(doc.title),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.text_snippet_outlined),
-                        onPressed: () => widget.onRead(doc),
-                      ),
-                    )),
-                  ],
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: OutlinedButton(
-                      onPressed: achieved || index != topic.achievedStage + 1
-                          ? null
-                          : () async {
-                              final confirm = await showDialog<bool>(
-                                context: context,
-                                builder: (ctx) => AlertDialog(
-                                  title: const Text('Registrar nivel'),
-                                  content: const Text('Esto registra tu autoevaluación, no una prueba automática. Más adelante cada nivel tendrá una evaluación para comprobarlo. ¿Querés continuar?'),
-                                  actions: [
-                                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-                                    FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Registrar')),
-                                  ],
-                                ),
-                              );
-                              if (confirm == true) {
-                                setState(() => topic.achievedStage = index);
-                                await widget.onSave();
-                              }
-                            },
-                      child: Text(achieved ? 'Nivel registrado' : 'Registrar como alcanzado'),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }),
+          const Text('• ¿Cuál es la idea principal?\n• ¿Qué significa con tus palabras?\n• ¿Qué condición, causa o relación menciona?\n• ¿Cómo lo reconocerías en un ejercicio?'),
+        ]),
+      ))),
+    ]);
+  }
+
+  Widget _practice() {
+    if (_withText.isEmpty) {
+      return ListView(padding: const EdgeInsets.all(16), children: [
+        _header(), _empty('Todavía no hay texto de guías o apuntes para preparar la práctica.'),
+      ]);
+    }
+    final exercises = <({String title, String excerpt})>[];
+    for (final doc in _withText) {
+      for (final excerpt in _content.practiceExcerpts(doc.extractedText ?? '')) {
+        exercises.add((title: doc.title, excerpt: excerpt));
+      }
+    }
+    return ListView(padding: const EdgeInsets.all(16), children: [
+      _header(),
+      const Text('Busco consignas reconocibles dentro de tus archivos. Las pistas ayudan a organizar el razonamiento, pero no reemplazan la resolución.',
+        style: TextStyle(height: 1.4)),
+      const SizedBox(height: 12),
+      if (exercises.isEmpty)
+        Card(child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Icon(Icons.search_off, size: 30),
+            const SizedBox(height: 8),
+            const Text('No encontré consignas identificables automáticamente en el texto extraído.',
+              style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            const Text('No voy a inventar ejercicios y atribuirlos a tu guía. Elegí un ejemplo o problema del material y seguí esta secuencia:'),
+            const SizedBox(height: 8),
+            const Text('1. ¿Qué datos tengo y qué me piden?\n2. ¿Qué concepto conecta esos datos con lo que busco?\n3. ¿Por qué corresponde ese procedimiento?\n4. ¿El resultado tiene sentido?'),
+          ]),
+        ))
+      else
+        ...exercises.map((exercise) => Card(child: ExpansionTile(
+          leading: const Icon(Icons.calculate_outlined),
+          title: Text(exercise.title),
+          subtitle: const Text('Consigna encontrada en tu material'),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: [
+            Align(alignment: Alignment.centerLeft, child: SelectableText(exercise.excerpt)),
+            const SizedBox(height: 10),
+            const ExpansionTile(tilePadding: EdgeInsets.zero,
+              title: Text('Pista 1 · Interpretar'),
+              children: [Padding(padding: EdgeInsets.only(bottom: 10),
+                child: Text('Separá los datos conocidos de lo que te piden. Todavía no elijas una fórmula.'))]),
+            const ExpansionTile(tilePadding: EdgeInsets.zero,
+              title: Text('Pista 2 · Conectar'),
+              children: [Padding(padding: EdgeInsets.only(bottom: 10),
+                child: Text('Buscá qué definición, ley o procedimiento del material relaciona esos datos.'))]),
+            const ExpansionTile(tilePadding: EdgeInsets.zero,
+              title: Text('Pista 3 · Justificar'),
+              children: [Padding(padding: EdgeInsets.only(bottom: 10),
+                child: Text('Explicá por qué cada paso es válido y verificá unidades, condiciones y resultado.'))]),
+          ],
+        ))),
+    ]);
+  }
+
+  Widget _independent() => ListView(padding: const EdgeInsets.all(16), children: [
+    _header(),
+    const Text('Desafío independiente', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18)),
+    const SizedBox(height: 8),
+    const Text('Elegí una consigna de la guía o una idea importante del apunte. Intentá resolverla o explicarla sin mirar el procedimiento.',
+      style: TextStyle(height: 1.4)),
+    const SizedBox(height: 12),
+    TextField(controller: _answerController, minLines: 7, maxLines: 14,
+      decoration: const InputDecoration(
+        border: OutlineInputBorder(), alignLabelWithHint: true,
+        labelText: 'Tu razonamiento / resolución',
+        hintText: 'Anotá qué identificaste, qué principio usaste y por qué...')),
+    const SizedBox(height: 12),
+    OutlinedButton.icon(
+      onPressed: () => setState(() => _showReference = !_showReference),
+      icon: Icon(_showReference ? Icons.visibility_off : Icons.menu_book_outlined),
+      label: Text(_showReference ? 'Ocultar material de referencia' : 'Comparar con el material')),
+    if (_showReference) ...[
+      const SizedBox(height: 8),
+      if (_withText.isEmpty) _empty('No hay texto extraído para mostrar.')
+      else ..._withText.map((doc) => Card(child: ExpansionTile(
+        title: Text(doc.title),
+        children: _sections(doc).map((part) =>
+          Padding(padding: const EdgeInsets.all(12), child: SelectableText(part.text))).toList(),
+      ))),
+    ],
+    const SizedBox(height: 12),
+    const Text('Revisá: ¿podés justificar cada paso?, ¿usaste una idea que aparece en el material?, ¿podrías repetir el razonamiento sin ayuda?',
+      style: TextStyle(height: 1.4)),
+  ]);
+
+  Future<void> _evaluate() async {
+    final topic = widget.topic;
+    if (_withText.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Primero necesitás texto de estudio asociado a este tema.')));
+      return;
+    }
+    final next = topic.achievedStage + 1;
+    if (next > 4) return;
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Comprobar: ' + MasteryStage.values[next - 1].title),
+        content: const Text('Después de estudiar y practicar, ¿cómo pudiste resolver el desafío sin mirar la respuesta?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, 'example'),
+            child: const Text('Necesité un ejemplo')),
+          TextButton(onPressed: () => Navigator.pop(ctx, 'hints'),
+            child: const Text('Con algunas pistas')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, 'independent'),
+            child: const Text('Por mi cuenta')),
         ],
       ),
     );
+    if (!mounted || result == null) return;
+    if (result == 'independent') {
+      setState(() => topic.achievedStage = next);
+      await widget.onSave();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(MasteryStage.values[next - 1].title + ' registrado.')));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(result == 'hints'
+          ? 'Bien: ya estás cerca. Repetí el desafío reduciendo las pistas.'
+          : 'Volvé a Aprender y Practicar con un ejemplo del material. Después intentá resolverlo sin mirar.')));
+    }
   }
 
-  String _stagePrompt(int index) => switch (index) {
-    1 => 'Comprobá que podés reconocer los conceptos, símbolos, magnitudes y definiciones cuando aparecen en el material.',
-    2 => 'Intentá explicar con tus palabras qué significa cada idea y por qué sucede. No alcanza con repetir la definición.',
-    3 => 'Resolvé ejercicios usando el concepto y justificá por qué elegís ese procedimiento.',
-    _ => 'Relacioná este tema con otros y resolvé una situación nueva sin depender de una receta conocida.',
-  };
+  Widget _evaluation() {
+    final topic = widget.topic;
+    final completed = topic.achievedStage >= 4;
+    final next = completed ? null : MasteryStage.values[topic.achievedStage];
+    return ListView(padding: const EdgeInsets.all(16), children: [
+      _header(),
+      Card(child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(completed ? '¡Tema integrado!' : 'Siguiente objetivo',
+            style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          if (completed)
+            const Text('Completaste los cuatro niveles. Podés volver a practicar para mantenerlo activo.')
+          else ...[
+            Text(next!.title, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 6),
+            Text(next.description),
+            const SizedBox(height: 12),
+            Text(switch (topic.achievedStage) {
+              0 => 'Reconocé los conceptos, símbolos y definiciones cuando aparecen en el material.',
+              1 => 'Explicá qué significa la idea y por qué funciona, sin repetir literalmente el apunte.',
+              2 => 'Resolvé una consigna de la guía justificando el procedimiento.',
+              _ => 'Relacioná este tema con otros y resolvé una situación nueva sin depender de una receta.',
+            }),
+            const SizedBox(height: 14),
+            SizedBox(width: double.infinity, child: FilledButton.icon(
+              onPressed: _evaluate,
+              icon: const Icon(Icons.verified_outlined),
+              label: const Text('Evaluar mi comprensión'))),
+            const SizedBox(height: 8),
+            const Text('El avance se registra cuando indicás que pudiste hacerlo por tu cuenta. La app no finge corregir respuestas abiertas automáticamente.',
+              style: TextStyle(fontSize: 12)),
+          ],
+        ]),
+      )),
+      const SizedBox(height: 8),
+      ...MasteryStage.values.asMap().entries.map((entry) {
+        final index = entry.key + 1;
+        final achieved = topic.achievedStage >= index;
+        return ListTile(
+          leading: Icon(achieved ? Icons.check_circle : Icons.radio_button_unchecked,
+            color: achieved ? Colors.green : null),
+          title: Text(entry.value.title),
+          subtitle: Text(entry.value.description),
+          trailing: Text(achieved ? 'Logrado' : index.toString() + '/4'),
+        );
+      }),
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) => DefaultTabController(
+    length: 5,
+    child: Scaffold(
+      appBar: AppBar(title: Text(widget.topic.title),
+        bottom: const TabBar(isScrollable: true, tabs: [
+          Tab(icon: Icon(Icons.menu_book_outlined), text: 'Aprender'),
+          Tab(icon: Icon(Icons.psychology_outlined), text: 'Entender'),
+          Tab(icon: Icon(Icons.calculate_outlined), text: 'Practicar'),
+          Tab(icon: Icon(Icons.edit_note), text: 'Resolver solo'),
+          Tab(icon: Icon(Icons.flag_outlined), text: 'Evaluar'),
+        ])),
+      body: TabBarView(children: [
+        _learn(), _understand(), _practice(), _independent(), _evaluation(),
+      ]),
+    ),
+  );
 }
 
 class _SubjectDocument {
