@@ -34,10 +34,10 @@ jobs:
           app = Path('android/app')
           rules = app / 'proguard-rules.pro'
           rules.write_text(
-              '-dontwarn com.google.mlkit.vision.text.chinese.**\\n'
-              '-dontwarn com.google.mlkit.vision.text.devanagari.**\\n'
-              '-dontwarn com.google.mlkit.vision.text.japanese.**\\n'
-              '-dontwarn com.google.mlkit.vision.text.korean.**\\n'
+              '-dontwarn com.google.mlkit.vision.text.chinese.**\n'
+              '-dontwarn com.google.mlkit.vision.text.devanagari.**\n'
+              '-dontwarn com.google.mlkit.vision.text.japanese.**\n'
+              '-dontwarn com.google.mlkit.vision.text.korean.**\n'
           )
           gradle = app / 'build.gradle'
           kotlin = app / 'build.gradle.kts'
@@ -48,7 +48,7 @@ jobs:
           else:
               line = "proguardFiles 'proguard-rules.pro'"
           if line not in source:
-              source, count = re.subn(r'release\\s*\\{', lambda m: m.group(0) + '\\n            ' + line, source, count=1)
+              source, count = re.subn(r'release\s*\{', lambda m: m.group(0) + '\n            ' + line, source, count=1)
               if count != 1:
                   raise SystemExit('Could not configure release ProGuard rules')
               target.write_text(source)
