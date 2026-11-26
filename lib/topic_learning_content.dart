@@ -7,8 +7,21 @@ class StudyTextSection {
   const StudyTextSection(this.text, this.index);
 }
 
+class StudyLessonBlock {
+  final StudyTextSection section;
+  final String label;
+  final String checkQuestion;
+
+  const StudyLessonBlock({
+    required this.section,
+    required this.label,
+    required this.checkQuestion,
+  });
+}
+
 class TopicLearningContent {
   const TopicLearningContent();
+
 
   List<StudyTextSection> sections(String source, {int maxLength = 1100}) {
     final normalized = source.replaceAll('\r\n', '\n').replaceAll('\r', '\n').trim();
@@ -42,6 +55,55 @@ class TopicLearningContent {
       }
     }
     return result;
+  }
+
+
+  /// Organizes real source fragments into a guided reading path.
+  /// Labels and questions are prompts; the academic content remains verbatim.
+  List<StudyLessonBlock> lessonBlocks(String source, {int maxLength = 1100}) {
+    return sections(source, maxLength: maxLength).map((section) {
+      final text = section.text.toLowerCase();
+      if (RegExp(r'\b(definici[oó]n|se define|se denomina|se llama|significa)\b').hasMatch(text)) {
+        return StudyLessonBlock(
+          section: section,
+          label: 'Concepto / definición',
+          checkQuestion: '¿Qué idea se está definiendo y qué características la distinguen?',
+        );
+      }
+      if (RegExp(r'\b(ejemplo|resuelto|aplicaci[oó]n)\b').hasMatch(text)) {
+        return StudyLessonBlock(
+          section: section,
+          label: 'Ejemplo / aplicación',
+          checkQuestion: '¿Qué pasos se siguen y por qué cada uno tiene sentido?',
+        );
+      }
+      if (RegExp(r'\b(teorema|propiedad|ley|corolario)\b').hasMatch(text)) {
+        return StudyLessonBlock(
+          section: section,
+          label: 'Propiedad / resultado',
+          checkQuestion: '¿Qué condiciones deben cumplirse y qué conclusión permite obtener?',
+        );
+      }
+      if (RegExp(r'[=≈≤≥∫∑√∞]|\b(f[oó]rmula|ecuaci[oó]n|expresi[oó]n)\b').hasMatch(text)) {
+        return StudyLessonBlock(
+          section: section,
+          label: 'Expresión matemática',
+          checkQuestion: '¿Qué representa cada símbolo y en qué situación podés usar esta expresión?',
+        );
+      }
+      if (RegExp(r'\b(paso|procedimiento|m[eé]todo|algoritmo)\b').hasMatch(text)) {
+        return StudyLessonBlock(
+          section: section,
+          label: 'Procedimiento',
+          checkQuestion: '¿Cuál es el orden de los pasos y qué justifica pasar de uno al siguiente?',
+        );
+      }
+      return StudyLessonBlock(
+        section: section,
+        label: 'Desarrollo del material',
+        checkQuestion: '¿Cuál es la idea principal de este fragmento y con qué parte del tema se conecta?',
+      );
+    }).toList();
   }
 
   /// Returns only passages that look like actual exercise statements.

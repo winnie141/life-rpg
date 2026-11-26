@@ -23,6 +23,17 @@ void main() {
           List.generate(sections.length, (index) => index + 1));
     });
 
+    test('labels real source fragments and adds a question for guided reading', () {
+      const source = 'Definición: la derivada representa la tasa de variación.';
+
+      final blocks = content.lessonBlocks(source);
+
+      expect(blocks, hasLength(1));
+      expect(blocks.single.label, 'Concepto / definición');
+      expect(blocks.single.section.text, source);
+      expect(blocks.single.checkQuestion, contains('Qué idea'));
+    });
+
     test('finds exercise excerpts only when exercise wording exists', () {
       const source = '''
 Teoría: la fuerza neta produce aceleración.

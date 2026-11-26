@@ -86,12 +86,14 @@ class StudyTopic {
   String title;
   int achievedStage;
   List<String> sourceDocumentIds;
+  String? parentId;
 
   StudyTopic({
     required this.id,
     required this.title,
     int achievedStage = 0,
     List<String> sourceDocumentIds = const [],
+    this.parentId,
   })  : achievedStage = achievedStage.clamp(0, 4).toInt(),
         sourceDocumentIds = List<String>.from(sourceDocumentIds);
 
@@ -100,6 +102,7 @@ class StudyTopic {
         'title': title,
         'achievedStage': achievedStage,
         'sourceDocumentIds': sourceDocumentIds,
+        'parentId': parentId,
       };
 
   factory StudyTopic.fromJson(Map<String, dynamic> json) => StudyTopic(
@@ -110,6 +113,7 @@ class StudyTopic {
             (json['sourceDocumentIds'] as List<dynamic>? ?? const [])
                 .whereType<String>()
                 .toList(),
+        parentId: json['parentId'] as String?,
       );
 
   String get currentStageLabel =>
@@ -119,11 +123,20 @@ class StudyTopic {
 class TopicSuggestion {
   final String title;
   final int sourceLine;
+  final int level;
 
   const TopicSuggestion({
     required this.title,
     required this.sourceLine,
+    this.level = 0,
   });
+}
+
+class ProgramTopicEntry {
+  final String title;
+  final int level;
+
+  const ProgramTopicEntry({required this.title, this.level = 0});
 }
 
 /// Conservative, offline heading detector.
@@ -158,9 +171,14 @@ class TopicExtractor {
         continue;
       }
 
+      final numbering = RegExp(r'^\s*(\d+(?:\.\d+)*)(?:[.)])?\s+').firstMatch(raw);
+      final level = numbering == null
+          ? 0
+          : numbering.group(1)!.split('.').length - 1;
       suggestions.add(TopicSuggestion(
         title: candidate,
         sourceLine: index + 1,
+        level: level,
       ));
     }
 
@@ -228,6 +246,37 @@ class TopicExtractor {
 /// is preserved. This intentionally does not infer topics from paragraphs.
 class ProgramTopicParser {
   const ProgramTopicParser();
+
+  List<ProgramTopicEntry> parseEntries(String sourceText) {
+    final result = <ProgramTopicEntry>[];
+    final seen = <String>{};
+    final lines = sourceText
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .split('\n');
+    for (final rawLine in lines) {
+      var value = rawLine.trim();
+      if (value.isEmpty) continue;
+      var level = 0;
+      final numbering = RegExp(r'^(\d+(?:\.\d+)*)(?:[.)])?\s+').firstMatch(value);
+      if (numbering != null) {
+        level = numbering.group(1)!.split('.').length - 1;
+        value = value.substring(numbering.end);
+      }
+      value = value.replaceFirst(RegExp(r'^[•*–—-]\s*'), '');
+      value = value.replaceFirst(
+        RegExp(r'^(?:unidad|tema|cap[ií]tulo|secci[oó]n)\s*(?:n[º°.]?\s*)?[\dIVX.-]*\s*[:.)-]?\s*', caseSensitive: false),
+        '',
+      );
+      value = value.replaceAll(RegExp(r'\s+'), ' ').trim();
+      if (value.length < 2 || value.length > 120) continue;
+      final key = value.toLowerCase();
+      if (seen.add(key)) {
+        result.add(ProgramTopicEntry(title: value, level: level));
+      }
+    }
+    return result;
+  }
 
   List<String> parse(String sourceText) {
     final result = <String>[];

@@ -21,6 +21,7 @@ Más contenido.
         'Leyes de Newton',
       ]);
       expect(topics.map((topic) => topic.sourceLine).toList(), [1, 3, 5]);
+      expect(topics.map((topic) => topic.level).toList(), [0, 0, 1]);
     });
 
     test('detects short uppercase headings', () {
@@ -77,6 +78,12 @@ Otro contenido.
       expect(restored.title, 'Dinámica');
       expect(restored.achievedStage, 4);
       expect(restored.sourceDocumentIds, ['doc-1']);
+      final nested = StudyTopic(
+        id: 'topic-2',
+        title: 'Integrales definidas',
+        parentId: 'topic-1',
+      );
+      expect(StudyTopic.fromJson(nested.toJson()).parentId, 'topic-1');
     });
   });
 
@@ -101,6 +108,24 @@ Unidad 1: Límites
 '''),
         ['Límites', 'Continuidad', 'Derivadas', 'Aplicaciones de la derivada'],
       );
+    });
+
+    test('reads hierarchical numbering as parent and subtopic levels', () {
+      final entries = parser.parseEntries('''
+1. Integrales
+1.1 Indefinidas
+1.2 Definidas
+1.2.1 Teorema fundamental
+2. Series
+''');
+      expect(entries.map((entry) => entry.title).toList(), [
+        'Integrales',
+        'Indefinidas',
+        'Definidas',
+        'Teorema fundamental',
+        'Series',
+      ]);
+      expect(entries.map((entry) => entry.level).toList(), [0, 1, 1, 2, 0]);
     });
 
     test('ignores blank and duplicate lines', () {

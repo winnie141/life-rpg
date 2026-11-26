@@ -89,6 +89,7 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
         onAnalyze: () => _analyzeSubject(subject),
         onEditDocument: _editDocument,
         onAddManualTopic: () => _manualTopic(subject),
+        onAddSubtopic: (topic) => _manualTopic(subject, parent: topic),
         onOpenTopic: (topic) => _openTopic(subject, topic),
         onEditTopic: _editTopic,
         onDeleteTopic: _deleteTopic,
@@ -450,33 +451,38 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
       final programs = docs.where((doc) => doc.category == 'program').toList();
       final programText = programs.map((doc) => doc.extractedText ?? '')
           .where((value) => value.trim().isNotEmpty).join('\n');
-      final programTitles = _programParser.parse(programText);
+      final programEntries = _programParser.parseEntries(programText);
 
-      // Without an official syllabus, build a provisional structure from
-      // explicit headings in the uploaded notes and guides.
-      final inferredTitles = <String>[];
+      // Without an official syllabus, infer a provisional outline from
+      // numbered headings in the uploaded notes and guides.
+      final inferredEntries = <ProgramTopicEntry>[];
       final seenTitles = <String>{};
       for (final doc in docs.where((item) => item.category != 'program')) {
         for (final suggestion in _topicExtractor.extract(doc.extractedText ?? '')) {
           final key = _normalizeMatch(suggestion.title);
-          if (key.isNotEmpty && seenTitles.add(key)) inferredTitles.add(suggestion.title);
-        }
-      }
-
-      final hasProgram = programTitles.isNotEmpty;
-      final proposedTitles = hasProgram ? programTitles : inferredTitles;
-      final fallbackTitles = <String>[];
-      if (proposedTitles.isEmpty) {
-        for (final doc in docs.where((item) => item.category != 'program')) {
-          final candidate = doc.section.trim().isNotEmpty ? doc.section.trim() : doc.title.trim();
-          if (candidate.isNotEmpty &&
-              !fallbackTitles.any((value) => _sameText(value, candidate))) {
-            fallbackTitles.add(candidate);
+          if (key.isNotEmpty && seenTitles.add(key)) {
+            inferredEntries.add(ProgramTopicEntry(
+              title: suggestion.title,
+              level: suggestion.level,
+            ));
           }
         }
       }
-      final finalTitles = proposedTitles.isNotEmpty ? proposedTitles : fallbackTitles;
-      if (finalTitles.isEmpty) {
+
+      final hasProgram = programEntries.isNotEmpty;
+      final proposedEntries = hasProgram ? programEntries : inferredEntries;
+      final fallbackEntries = <ProgramTopicEntry>[];
+      if (proposedEntries.isEmpty) {
+        for (final doc in docs.where((item) => item.category != 'program')) {
+          final candidate = doc.section.trim().isNotEmpty ? doc.section.trim() : doc.title.trim();
+          if (candidate.isNotEmpty &&
+              !fallbackEntries.any((entry) => _sameText(entry.title, candidate))) {
+            fallbackEntries.add(ProgramTopicEntry(title: candidate));
+          }
+        }
+      }
+      final finalEntries = proposedEntries.isNotEmpty ? proposedEntries : fallbackEntries;
+      if (finalEntries.isEmpty) {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('No encontré temas claros. Revisá que los archivos tengan texto legible o agregá un tema manualmente.')),
         );
@@ -486,15 +492,30 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
       final topics = _subjectTopics(subject.id);
       final previous = List<StudyTopic>.from(topics);
       final rebuilt = <StudyTopic>[];
-      for (final title in finalTitles) {
+      final hierarchyStack = <StudyTopic>[];
+      for (final entry in finalEntries) {
+        // If numbering skips a level, attach to the nearest available parent
+        // rather than creating a broken/orphaned hierarchy.
+        final level = entry.level.clamp(0, hierarchyStack.length).toInt();
+        while (hierarchyStack.length > level) {
+          hierarchyStack.removeLast();
+        }
+        final parent = level == 0 ? null : hierarchyStack[level - 1];
         StudyTopic? existing;
         for (final candidate in previous) {
-          if (_sameText(candidate.title, title)) { existing = candidate; break; }
+          if (_sameText(candidate.title, entry.title) &&
+              candidate.parentId == parent?.id) {
+            existing = candidate;
+            break;
+          }
         }
-        rebuilt.add(existing ?? StudyTopic(
+        final topic = existing ?? StudyTopic(
           id: DateTime.now().microsecondsSinceEpoch.toString() + rebuilt.length.toString(),
-          title: title,
-        ));
+          title: entry.title,
+          parentId: parent?.id,
+        );
+        rebuilt.add(topic);
+        hierarchyStack.add(topic);
       }
       // Keep manually created topics and their progress rather than deleting
       // them when a new analysis proposes a shorter list.
@@ -535,8 +556,8 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
           content: SizedBox(width: double.maxFinite, child: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(hasProgram
-                ? '${finalTitles.length} temas organizados según el programa.'
-                : '${finalTitles.length} temas provisorios detectados a partir de tus archivos.'),
+                ? '${finalEntries.length} temas y subtemas organizados según el programa.'
+                : '${finalEntries.length} temas y subtemas provisorios detectados a partir de tus archivos.'),
               const SizedBox(height: 12),
               const Text('Documentos relacionados:', style: TextStyle(fontWeight: FontWeight.w600)),
               ...topics.map((topic) => Padding(
@@ -573,12 +594,12 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
       .replaceAll(RegExp(r'[^a-záéíóúüñ0-9]+'), ' ')
       .replaceAll(RegExp(r'\s+'), ' ').trim();
 
-  Future<void> _manualTopic(SubjectSection subject) async {
+  Future<void> _manualTopic(SubjectSection subject, {StudyTopic? parent}) async {
     final controller = TextEditingController();
     final add = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Agregar tema manualmente'),
+        title: Text(parent == null ? 'Agregar tema manualmente' : 'Agregar subtema a ${parent.title}'),
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -592,10 +613,13 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
     );
     if (add == true && controller.text.trim().isNotEmpty) {
       final title = controller.text.trim();
-      if (!_subjectTopics(subject.id).any((item) => item.title.toLowerCase() == title.toLowerCase())) {
+      if (!_subjectTopics(subject.id).any((item) =>
+          item.title.toLowerCase() == title.toLowerCase() &&
+          item.parentId == parent?.id)) {
         _subjectTopics(subject.id).add(StudyTopic(
           id: DateTime.now().microsecondsSinceEpoch.toString(),
           title: title,
+          parentId: parent?.id,
         ));
       }
       await _save();
@@ -631,7 +655,7 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Eliminar tema'),
-        content: Text('¿Querés eliminar "' + topic.title + '" y su progreso? Los documentos originales no se borran.'),
+        content: Text('¿Querés eliminar "${topic.title}" y sus subtemas y progreso? Los documentos originales no se borran.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
           FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Eliminar')),
@@ -639,8 +663,20 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
       ),
     );
     if (confirmed == true) {
+      final idsToDelete = <String>{topic.id};
+      var changed = true;
+      while (changed) {
+        changed = false;
+        for (final candidate in _topics.values.expand((items) => items)) {
+          if (candidate.parentId != null &&
+              idsToDelete.contains(candidate.parentId) &&
+              idsToDelete.add(candidate.id)) {
+            changed = true;
+          }
+        }
+      }
       for (final list in _topics.values) {
-        list.removeWhere((item) => item.id == topic.id);
+        list.removeWhere((item) => idsToDelete.contains(item.id));
       }
       await _save();
       if (mounted) setState(() {});
@@ -709,6 +745,7 @@ class _SubjectDetailPage extends StatefulWidget {
   final Future<void> Function() onAnalyze;
   final Future<void> Function(_SubjectDocument doc) onEditDocument;
   final Future<void> Function() onAddManualTopic;
+  final Future<void> Function(StudyTopic topic) onAddSubtopic;
   final Future<void> Function(StudyTopic topic) onOpenTopic;
   final Future<void> Function(StudyTopic topic) onEditTopic;
   final Future<void> Function(StudyTopic topic) onDeleteTopic;
@@ -719,7 +756,7 @@ class _SubjectDetailPage extends StatefulWidget {
   const _SubjectDetailPage({
     required this.subject, required this.topics, required this.documents,
     required this.onImport, required this.onAddProgramText, required this.onAnalyze,
-    required this.onEditDocument, required this.onAddManualTopic,
+    required this.onEditDocument, required this.onAddManualTopic, required this.onAddSubtopic,
     required this.onOpenTopic, required this.onEditTopic, required this.onDeleteTopic,
     required this.onOpenDocument, required this.onReadDocument, required this.onDeleteDocument,
   });
@@ -773,6 +810,45 @@ class _SubjectDetailPageState extends State<_SubjectDetailPage> {
             )),
           ],
         ]),
+      ),
+    );
+  }
+
+  Widget _topicCard(StudyTopic topic, {int depth = 0}) {
+    final children = widget.topics.where((item) => item.parentId == topic.id).toList();
+    return Card(
+      margin: EdgeInsets.only(left: depth == 0 ? 0 : 18, bottom: 8),
+      child: Column(
+        children: [
+          ListTile(
+            title: Text(topic.title, style: const TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: Text(depth == 0
+                ? topic.currentStageLabel
+                : 'Subtema · ${topic.currentStageLabel}'),
+            trailing: PopupMenuButton<String>(
+              onSelected: (value) {
+                if (value == 'open') widget.onOpenTopic(topic);
+                if (value == 'subtopic') widget.onAddSubtopic(topic);
+                if (value == 'edit') widget.onEditTopic(topic);
+                if (value == 'delete') widget.onDeleteTopic(topic);
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'open', child: Text('Abrir para estudiar')),
+                PopupMenuItem(value: 'subtopic', child: Text('Agregar subtema')),
+                PopupMenuItem(value: 'edit', child: Text('Editar nombre')),
+                PopupMenuItem(value: 'delete', child: Text('Eliminar tema')),
+              ],
+            ),
+            onTap: () => widget.onOpenTopic(topic),
+          ),
+          if (children.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 14, right: 8, bottom: 8),
+              child: Column(
+                children: children.map((child) => _topicCard(child, depth: depth + 1)).toList(),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -859,24 +935,101 @@ class _SubjectDetailPageState extends State<_SubjectDetailPage> {
               padding: EdgeInsets.all(16),
               child: Text('Todavía no hay temas. Cargá apuntes o guías y tocá “Analizar materia”. El programa oficial es opcional: sin él se crea una estructura provisoria.'),
             )),
-          ...widget.topics.map((topic) => Card(child: ListTile(
-            title: Text(topic.title),
-            subtitle: Text(topic.currentStageLabel),
-            trailing: PopupMenuButton<String>(
-              onSelected: (value) {
-                if (value == 'open') widget.onOpenTopic(topic);
-                if (value == 'edit') widget.onEditTopic(topic);
-                if (value == 'delete') widget.onDeleteTopic(topic);
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'open', child: Text('Abrir niveles')),
-                PopupMenuItem(value: 'edit', child: Text('Editar nombre')),
-                PopupMenuItem(value: 'delete', child: Text('Eliminar tema')),
-              ],
-            ),
-            onTap: () => widget.onOpenTopic(topic),
-          ))),
+          ...widget.topics.where((topic) => topic.parentId == null)
+              .map((topic) => _topicCard(topic)),
         ],
+      ),
+    );
+  }
+}
+
+class _ExercisePracticeCard extends StatefulWidget {
+  final String title;
+  final String excerpt;
+
+  const _ExercisePracticeCard({required this.title, required this.excerpt});
+
+  @override
+  State<_ExercisePracticeCard> createState() => _ExercisePracticeCardState();
+}
+
+class _ExercisePracticeCardState extends State<_ExercisePracticeCard> {
+  final TextEditingController _work = TextEditingController();
+  int _revealedHints = 0;
+
+  static const List<String> _hints = [
+    'Separá los datos conocidos de lo que te piden. Escribí la incógnita con claridad antes de operar.',
+    'Buscá en el material qué definición, propiedad o relación conecta los datos con lo que necesitás encontrar.',
+    'Justificá por qué corresponde cada paso. Al final revisá unidades, condiciones y si el resultado tiene sentido.',
+  ];
+
+  @override
+  void dispose() {
+    _work.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Icon(Icons.calculate_outlined),
+              const SizedBox(width: 8),
+              Expanded(child: Text(widget.title,
+                style: const TextStyle(fontWeight: FontWeight.w600))),
+            ]),
+            const SizedBox(height: 10),
+            SelectableText(widget.excerpt),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _work,
+              minLines: 3,
+              maxLines: 8,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                alignLabelWithHint: true,
+                labelText: 'Tu planteo y resolución',
+                hintText: '¿Qué datos tengo? ¿Qué me piden? ¿Qué relación puedo usar?',
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (_revealedHints > 0) ...[
+              ..._hints.take(_revealedHints).toList().asMap().entries.map((entry) =>
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text('Pista ${entry.key + 1}: ${entry.value}'),
+                  ),
+                )),
+            ],
+            OutlinedButton.icon(
+              onPressed: _revealedHints < _hints.length
+                  ? () => setState(() => _revealedHints++)
+                  : null,
+              icon: const Icon(Icons.lightbulb_outline),
+              label: Text(_revealedHints == 0
+                  ? 'Necesito una pista'
+                  : _revealedHints < _hints.length
+                      ? 'Mostrar siguiente pista'
+                      : 'Ya viste todas las pistas'),
+            ),
+            const Text(
+              'Las pistas orientan el razonamiento; no son una solución automática del ejercicio.',
+              style: TextStyle(fontSize: 12),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -960,40 +1113,72 @@ class _TopicDetailPageState extends State<_TopicDetailPage> {
     }
     return ListView(padding: const EdgeInsets.all(16), children: [
       _header(),
-      const Text('Leé el material de a poco. La app conserva el texto original y lo separa en fragmentos para estudiar sin perder la fuente.',
-        style: TextStyle(height: 1.4)),
+      const Text(
+        'Recorrido de lectura. El contenido que ves sale de tus archivos originales; la app lo ordena y propone preguntas para estudiarlo, pero no inventa partes que no pudo reconocer.',
+        style: TextStyle(height: 1.4),
+      ),
       const SizedBox(height: 12),
       ...widget.documents.map((doc) {
-        final parts = _sections(doc);
-        return Card(child: ExpansionTile(
-          initiallyExpanded: widget.documents.length == 1,
-          leading: Icon(doc.category == 'guide' ? Icons.assignment_outlined : Icons.menu_book_outlined),
-          title: Text(doc.title),
-          subtitle: Text(parts.isEmpty ? 'Texto pendiente de extracción' :
-            parts.length.toString() + ' fragmento(s) de material'),
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          children: parts.isEmpty ? [
-            const Align(alignment: Alignment.centerLeft, child: Text(
-              'No hay texto extraído. Si es un PDF escaneado o una foto, el reconocimiento puede necesitar correcciones.')),
-            Align(alignment: Alignment.centerLeft, child: TextButton.icon(
-              onPressed: () async { await widget.onRead(doc); if (mounted) setState(() {}); },
-              icon: const Icon(Icons.text_snippet_outlined),
-              label: const Text('Leer y preparar material'))),
-          ] : parts.map((part) => Container(
-            width: double.infinity,
-            margin: const EdgeInsets.only(top: 10),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(12)),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Fragmento ' + part.index.toString(),
-                style: Theme.of(context).textTheme.labelLarge),
-              const SizedBox(height: 6),
-              SelectableText(part.text),
-            ]),
-          )).toList(),
-        ));
+        final blocks = _content.lessonBlocks(doc.extractedText ?? '');
+        return Card(
+          child: ExpansionTile(
+            initiallyExpanded: widget.documents.length == 1,
+            leading: Icon(doc.category == 'guide'
+                ? Icons.assignment_outlined
+                : Icons.menu_book_outlined),
+            title: Text(doc.title),
+            subtitle: Text(blocks.isEmpty
+                ? 'Texto pendiente de extracción'
+                : '${blocks.length} bloques de lectura guiada'),
+            childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
+            children: blocks.isEmpty ? [
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text('No hay texto extraído. Abrí el documento para reconocer o corregir su contenido.'),
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () async {
+                    await widget.onRead(doc);
+                    if (mounted) setState(() {});
+                  },
+                  icon: const Icon(Icons.text_snippet_outlined),
+                  label: const Text('Leer y preparar material'),
+                ),
+              ),
+            ] : blocks.map((block) => Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(top: 10),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Expanded(
+                      child: Text(block.label,
+                        style: Theme.of(context).textTheme.labelLarge),
+                    ),
+                    Text('Parte ${block.section.index}',
+                      style: Theme.of(context).textTheme.labelSmall),
+                  ]),
+                  const SizedBox(height: 8),
+                  SelectableText(block.section.text),
+                  const Divider(height: 22),
+                  Text('Comprobá que lo entendiste',
+                    style: Theme.of(context).textTheme.labelLarge),
+                  const SizedBox(height: 5),
+                  Text(block.checkQuestion,
+                    style: const TextStyle(height: 1.35)),
+                ],
+              ),
+            )).toList(),
+          ),
+        );
       }),
     ]);
   }
@@ -1058,28 +1243,10 @@ class _TopicDetailPageState extends State<_TopicDetailPage> {
           ]),
         ))
       else
-        ...exercises.map((exercise) => Card(child: ExpansionTile(
-          leading: const Icon(Icons.calculate_outlined),
-          title: Text(exercise.title),
-          subtitle: const Text('Consigna encontrada en tu material'),
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          children: [
-            Align(alignment: Alignment.centerLeft, child: SelectableText(exercise.excerpt)),
-            const SizedBox(height: 10),
-            const ExpansionTile(tilePadding: EdgeInsets.zero,
-              title: Text('Pista 1 · Interpretar'),
-              children: [Padding(padding: EdgeInsets.only(bottom: 10),
-                child: Text('Separá los datos conocidos de lo que te piden. Todavía no elijas una fórmula.'))]),
-            const ExpansionTile(tilePadding: EdgeInsets.zero,
-              title: Text('Pista 2 · Conectar'),
-              children: [Padding(padding: EdgeInsets.only(bottom: 10),
-                child: Text('Buscá qué definición, ley o procedimiento del material relaciona esos datos.'))]),
-            const ExpansionTile(tilePadding: EdgeInsets.zero,
-              title: Text('Pista 3 · Justificar'),
-              children: [Padding(padding: EdgeInsets.only(bottom: 10),
-                child: Text('Explicá por qué cada paso es válido y verificá unidades, condiciones y resultado.'))]),
-          ],
-        ))),
+        ...exercises.map((exercise) => _ExercisePracticeCard(
+          title: exercise.title,
+          excerpt: exercise.excerpt,
+        )),
     ]);
   }
 
