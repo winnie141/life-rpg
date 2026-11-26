@@ -414,7 +414,7 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
         final matches = topics.where((topic) {
           final title = _normalizeMatch(topic.title);
           if (title.isEmpty) return false;
-          if (section.isNotEmpty && (section == title || section.contains(title) || title.contains(section))) return true;
+          if (section.isNotEmpty && section == title) return true;
           return extracted.contains(title);
         }).toList();
         if (matches.isEmpty) {
@@ -546,7 +546,7 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
         subject: subject,
         topic: topic,
         documents: _subjectDocuments(subject.id)
-            .where((doc) => topic.sourceDocumentIds.isEmpty || topic.sourceDocumentIds.contains(doc.id))
+            .where((doc) => topic.sourceDocumentIds.contains(doc.id))
             .toList(),
         onSave: () async { await _save(); if (mounted) setState(() {}); },
         onRead: _readDocument,
