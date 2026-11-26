@@ -79,7 +79,7 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
       builder: (_) => _SubjectDetailPage(
         subject: subject,
         topics: _subjectTopics(subject.id),
-        documents: _subjectDocuments(subject.id),
+        documents: () => _subjectDocuments(subject.id),
         onImport: (kind, camera) => _import(subject, kind, camera: camera),
         onEditTopics: () => _editTopics(subject),
         onOpenTopic: (topic) => _openTopic(subject, topic),
@@ -482,7 +482,7 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
 class _SubjectDetailPage extends StatefulWidget {
   final SubjectSection subject;
   final List<StudyTopic> topics;
-  final List<_SubjectDocument> documents;
+  final List<_SubjectDocument> Function() documents;
   final Future<void> Function(String kind, bool camera) onImport;
   final Future<void> Function() onEditTopics;
   final Future<void> Function(StudyTopic topic) onOpenTopic;
@@ -515,6 +515,7 @@ class _SubjectDetailPage extends StatefulWidget {
 class _SubjectDetailPageState extends State<_SubjectDetailPage> {
   @override
   Widget build(BuildContext context) {
+    final documents = widget.documents();
     return Scaffold(
       appBar: AppBar(title: Text(widget.subject.title)),
       body: ListView(
@@ -525,20 +526,20 @@ class _SubjectDetailPageState extends State<_SubjectDetailPage> {
           Text('Material de estudio', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
           Wrap(spacing: 8, runSpacing: 8, children: [
-            FilledButton.icon(onPressed: () => widget.onImport('pdf', false),
+            FilledButton.icon(onPressed: () async { await widget.onImport('pdf', false); if (mounted) setState(() {}); },
               icon: const Icon(Icons.picture_as_pdf), label: const Text('Subir PDF')),
-            OutlinedButton.icon(onPressed: () => widget.onImport('image', false),
+            OutlinedButton.icon(onPressed: () async { await widget.onImport('image', false); if (mounted) setState(() {}); },
               icon: const Icon(Icons.photo_library_outlined), label: const Text('Elegir foto')),
-            OutlinedButton.icon(onPressed: () => widget.onImport('image', true),
+            OutlinedButton.icon(onPressed: () async { await widget.onImport('image', true); if (mounted) setState(() {}); },
               icon: const Icon(Icons.camera_alt_outlined), label: const Text('Sacar foto')),
           ]),
           const SizedBox(height: 8),
-          if (widget.documents.isEmpty)
+          if (documents.isEmpty)
             const Card(child: Padding(
               padding: EdgeInsets.all(16),
               child: Text('Todavía no hay documentos en esta materia. Subí un PDF o una foto para empezar.'),
             )),
-          ...widget.documents.map((doc) => Card(child: ListTile(
+          ...documents.map((doc) => Card(child: ListTile(
             leading: Icon(doc.kind == 'image' ? Icons.image_outlined : Icons.picture_as_pdf),
             title: Text(doc.title),
             subtitle: Text(doc.extractedText == null ? 'Texto todavía no leído' : 'Texto leído · ${doc.extractedText!.length} caracteres'),
