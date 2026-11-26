@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
@@ -88,7 +89,6 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
         onOpenDocument: _openDocument,
         onReadDocument: _readDocument,
         onDeleteDocument: _deleteDocument,
-        processingId: () => _processingId,
       ),
     ));
     if (mounted) setState(() {});
@@ -256,8 +256,7 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
         child: InteractiveViewer(child: Image.file(File(doc.path), fit: BoxFit.contain)),
       ));
     } else {
-      // A preview of the PDF can be added separately; text extraction is available now.
-      await _readDocument(doc);
+      await OpenFilex.open(doc.path);
     }
   }
 
@@ -492,7 +491,6 @@ class _SubjectDetailPage extends StatefulWidget {
   final Future<void> Function(_SubjectDocument doc) onOpenDocument;
   final Future<void> Function(_SubjectDocument doc) onReadDocument;
   final Future<void> Function(_SubjectDocument doc) onDeleteDocument;
-  final String? Function() processingId;
 
   const _SubjectDetailPage({
     required this.subject,
@@ -506,7 +504,6 @@ class _SubjectDetailPage extends StatefulWidget {
     required this.onOpenDocument,
     required this.onReadDocument,
     required this.onDeleteDocument,
-    required this.processingId,
   });
 
   @override
