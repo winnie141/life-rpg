@@ -59,4 +59,58 @@ void main() {
     expect(missions, hasLength(1));
     expect(missions.single.estimatedMinutes, 15);
   });
+  test('uses matching library material as the source of a mission', () {
+    final missions = engine.generateDaily(
+      subjects: const [
+        StudySubject(
+          id: 'physics',
+          name: 'Física',
+          currentTopic: 'Dinámica',
+          mastery: 20,
+        ),
+      ],
+      date: DateTime(2026, 11, 26),
+      availableMinutes: 30,
+      materials: const [
+        StudyMaterial(
+          title: 'Guía de dinámica',
+          subject: 'Física',
+          topic: 'Dinámica',
+          text: 'La segunda ley de Newton relaciona la fuerza neta con la masa y la aceleración.',
+        ),
+      ],
+    );
+
+    expect(missions, hasLength(1));
+    expect(missions.single.sourceTitle, 'Guía de dinámica');
+    expect(missions.single.sourceExcerpt, contains('segunda ley de Newton'));
+    expect(missions.single.description, contains('Biblioteca'));
+  });
+
+  test('does not attach material from a different subject', () {
+    final missions = engine.generateDaily(
+      subjects: const [
+        StudySubject(
+          id: 'physics',
+          name: 'Física',
+          currentTopic: 'Dinámica',
+          mastery: 20,
+        ),
+      ],
+      date: DateTime(2026, 11, 26),
+      availableMinutes: 30,
+      materials: const [
+        StudyMaterial(
+          title: 'Apunte de álgebra',
+          subject: 'Álgebra',
+          topic: 'Matrices',
+          text: 'Contenido de matrices y determinantes.',
+        ),
+      ],
+    );
+
+    expect(missions.single.sourceTitle, isNull);
+    expect(missions.single.description, isNot(contains('Biblioteca')));
+  });
+
 }
