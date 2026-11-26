@@ -304,15 +304,18 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
         final page = await document.getPage(pageNumber);
         try {
           final image = await page.render(
-            width: (page.width * 2).round(),
-            height: (page.height * 2).round(),
+            width: page.width * 2,
+            height: page.height * 2,
             format: pdfx.PdfPageImageFormat.jpeg,
             backgroundColor: '#ffffff',
           );
+          if (image == null || image.bytes == null) {
+            continue;
+          }
           final imageFile = File(
             '${tempDirectory.path}/life_rpg_ocr_${DateTime.now().microsecondsSinceEpoch}_$pageNumber.jpg',
           );
-          await imageFile.writeAsBytes(image.bytes, flush: true);
+          await imageFile.writeAsBytes(image.bytes!, flush: true);
           temporaryFiles.add(imageFile);
           final result = await recognizer.processImage(
             InputImage.fromFilePath(imageFile.path),
