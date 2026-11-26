@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
@@ -136,12 +137,14 @@ class LibraryNoteItem {
 
 class LibraryDocumentItem {
   final String id, title, subject, topic, path, kind;
-  LibraryDocumentItem({required this.id, required this.title, required this.subject, required this.topic, required this.path, required this.kind});
-  Map<String, dynamic> toJson() => {'id': id, 'title': title, 'subject': subject, 'topic': topic, 'path': path, 'kind': kind};
+  String? extractedText;
+  LibraryDocumentItem({required this.id, required this.title, required this.subject, required this.topic, required this.path, required this.kind, this.extractedText});
+  Map<String, dynamic> toJson() => {'id': id, 'title': title, 'subject': subject, 'topic': topic, 'path': path, 'kind': kind, 'extractedText': extractedText};
   factory LibraryDocumentItem.fromJson(Map<String, dynamic> json) => LibraryDocumentItem(
     id: json['id'] as String, title: json['title'] as String? ?? 'Material',
     subject: json['subject'] as String? ?? 'General', topic: json['topic'] as String? ?? '',
-    path: json['path'] as String, kind: json['kind'] as String? ?? 'pdf');
+    path: json['path'] as String, kind: json['kind'] as String? ?? 'pdf',
+    extractedText: json['extractedText'] as String?);
 }
 
 String dateToKey(DateTime date) {
@@ -175,6 +178,7 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
   List<LibraryNoteItem> _notes = [];
   List<LibraryDocumentItem> _documents = [];
   final ImagePicker _imagePicker = ImagePicker();
+  String? _processingDocumentId;
   bool _loading = true;
 
   @override
@@ -730,6 +734,70 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
     } finally { titleCtrl.dispose(); subjectCtrl.dispose(); topicCtrl.dispose(); }
   }
 
+  Future<void> _extractTextFromImage(LibraryDocumentItem item) async {
+    if (_processingDocumentId != null) return;
+    setState(() => _processingDocumentId = item.id);
+    TextRecognizer? recognizer;
+    try {
+      recognizer = TextRecognizer(script: TextRecognitionScript.latin);
+      final inputImage = InputImage.fromFilePath(item.path);
+      final recognized = await recognizer.processImage(inputImage);
+      if (!mounted) return;
+      setState(() {
+        item.extractedText = recognized.text.trim();
+        _processingDocumentId = null;
+      });
+      await _saveDocuments();
+      await _showExtractedText(item);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _processingDocumentId = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo leer la imagen: ' + error.toString())),
+        );
+      }
+    } finally {
+      await recognizer?.close();
+      if (mounted && _processingDocumentId == item.id) {
+        setState(() => _processingDocumentId = null);
+      }
+    }
+  }
+
+  Future<void> _showExtractedText(LibraryDocumentItem item) async {
+    final controller = TextEditingController(text: item.extractedText ?? '');
+    final save = await showDialog<bool>(
+      context: _navigatorKey.currentState!.overlay!.context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Texto leído · ' + item.title),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: TextField(
+            controller: controller,
+            minLines: 8,
+            maxLines: 16,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              hintText: 'No se encontró texto legible. Podés escribirlo o corregirlo acá.',
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cerrar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Guardar texto')),
+        ],
+      ),
+    );
+    if (save == true && mounted) {
+      setState(() => item.extractedText = controller.text.trim());
+      await _saveDocuments();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Texto guardado en la biblioteca')),
+      );
+    }
+    controller.dispose();
+  }
+
   Future<void> _openLibraryDocument(LibraryDocumentItem item) async {
     if (item.kind == 'image') {
       await showDialog<void>(context: _navigatorKey.currentState!.overlay!.context, builder: (ctx) => Dialog(child: InteractiveViewer(child: Image.file(File(item.path), fit: BoxFit.contain))));
@@ -975,7 +1043,18 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
         title: Text(item.title),
         subtitle: Text(item.subject + (item.topic.isEmpty ? '' : ' · ' + item.topic) + (item.kind == 'image' ? ' · Imagen' : ' · PDF')),
         onTap: () => _openLibraryDocument(item),
-        trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => _deleteLibraryDocument(item)),
+        trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
+          if (item.kind == 'image') IconButton(
+            tooltip: item.extractedText == null ? 'Leer texto de la foto' : 'Ver texto leído',
+            onPressed: _processingDocumentId == item.id
+                ? null
+                : () => item.extractedText == null ? _extractTextFromImage(item) : _showExtractedText(item),
+            icon: _processingDocumentId == item.id
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                : Icon(item.extractedText == null ? Icons.text_snippet_outlined : Icons.description_outlined),
+          ),
+          IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => _deleteLibraryDocument(item)),
+        ]),
       ))),
       if (_notes.isNotEmpty) Text('Notas escritas', style: Theme.of(context).textTheme.titleMedium),
       ..._notes.map((n) => Card(child: ListTile(title: Text(n.title), subtitle: Text(n.subject + ' · ' + n.topic + '\n' + n.content), isThreeLine: true, trailing: IconButton(icon: const Icon(Icons.delete), onPressed: () { setState(() => _notes.removeWhere((x) => x.id == n.id)); _saveNotes(); })))),
