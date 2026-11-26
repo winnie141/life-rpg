@@ -38,6 +38,8 @@ class MissionItem {
   int? estimatedMinutes;
   String dayKey;
   String? subjectId;
+  int masteryGain;
+  bool progressRecorded;
 
   MissionItem({
     required this.id,
@@ -50,6 +52,8 @@ class MissionItem {
     this.estimatedMinutes,
     required this.dayKey,
     this.subjectId,
+    this.masteryGain = 0,
+    this.progressRecorded = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -63,6 +67,8 @@ class MissionItem {
         'estimatedMinutes': estimatedMinutes,
         'dayKey': dayKey,
         'subjectId': subjectId,
+        'masteryGain': masteryGain,
+        'progressRecorded': progressRecorded,
       };
 
   factory MissionItem.fromJson(Map<String, dynamic> json) => MissionItem(
@@ -82,6 +88,8 @@ class MissionItem {
         estimatedMinutes: json['estimatedMinutes'] as int?,
         dayKey: json['dayKey'] as String? ?? dateToKey(DateTime.now()),
         subjectId: json['subjectId'] as String?,
+        masteryGain: json['masteryGain'] as int? ?? 0,
+        progressRecorded: json['progressRecorded'] as bool? ?? false,
       );
 }
 
@@ -247,6 +255,7 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
             estimatedMinutes: draft.estimatedMinutes,
             dayKey: todayKey,
             subjectId: draft.subjectId,
+            masteryGain: draft.masteryGain,
           )));
     });
     await _saveMissions();
@@ -605,22 +614,25 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
                 onChanged: (val) {
                   final completed = val ?? false;
                   setState(() {
+                    final wasCompleted = m.completed;
                     m.completed = completed;
-                    final subjectIndex = _studySubjects.indexWhere(
-                      (subject) => subject.id == m.subjectId,
-                    );
-                    if (subjectIndex >= 0) {
-                      final subject = _studySubjects[subjectIndex];
-                      _studySubjects[subjectIndex] = StudySubject(
-                        id: subject.id,
-                        name: subject.name,
-                        currentTopic: subject.currentTopic,
-                        mastery: completed
-                            ? (subject.mastery + 4).clamp(0, 100).toInt()
-                            : (subject.mastery - 4).clamp(0, 100).toInt(),
-                        lastPracticedAt:
-                            completed ? DateTime.now() : subject.lastPracticedAt,
+                    if (completed && !wasCompleted && !m.progressRecorded) {
+                      final subjectIndex = _studySubjects.indexWhere(
+                        (subject) => subject.id == m.subjectId,
                       );
+                      if (subjectIndex >= 0) {
+                        final subject = _studySubjects[subjectIndex];
+                        _studySubjects[subjectIndex] = StudySubject(
+                          id: subject.id,
+                          name: subject.name,
+                          currentTopic: subject.currentTopic,
+                          mastery: (subject.mastery + m.masteryGain)
+                              .clamp(0, 100)
+                              .toInt(),
+                          lastPracticedAt: DateTime.now(),
+                        );
+                        m.progressRecorded = true;
+                      }
                     }
                   });
                   _saveMissions();
