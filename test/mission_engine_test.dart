@@ -32,6 +32,12 @@ void main() {
     expect(missions.last.isMainQuest, isFalse);
   });
 
+  test('weights mastery progress by independence', () {
+    expect(evidenceAdjustedGain(5, MissionEvidence.independent), 5);
+    expect(evidenceAdjustedGain(5, MissionEvidence.withHints), 3);
+    expect(evidenceAdjustedGain(5, MissionEvidence.withExample), 2);
+  });
+
   test('does not generate missions without a configured subject', () {
     expect(
       engine.generateDaily(
