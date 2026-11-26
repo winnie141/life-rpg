@@ -90,7 +90,7 @@ class StudyTopic {
   StudyTopic({
     required this.id,
     required this.title,
-    this.achievedStage = 0,
+    int achievedStage = 0,
     List<String> sourceDocumentIds = const [],
   })  : achievedStage = achievedStage.clamp(0, 4).toInt(),
         sourceDocumentIds = List<String>.from(sourceDocumentIds);
