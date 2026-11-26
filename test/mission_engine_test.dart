@@ -125,9 +125,11 @@ void main() {
           title: 'Apunte completo',
           subject: 'Física',
           topic: 'Dinámica',
-          text: 'Introducción general a la física y sus ramas.\\n\\n'
-              'La segunda ley de Newton establece que la fuerza neta sobre un cuerpo es igual al producto de su masa por su aceleración.\\n\\n'
-              'La óptica estudia la propagación de la luz.',
+          text: '''Introducción general a la física y sus ramas.
+
+La segunda ley de Newton establece que la fuerza neta sobre un cuerpo es igual al producto de su masa por su aceleración.
+
+La óptica estudia la propagación de la luz.''',
         ),
       ],
     );
