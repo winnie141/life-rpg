@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'mission_engine.dart';
+import 'subject_library_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -1430,7 +1431,7 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
   @override
   Widget build(BuildContext context) {
     final screens = [
-      _buildTodayView(),
+      const SubjectLibraryScreen(),
       _buildMapView(),
       _buildLibraryView(),
       _buildProfileView(),
@@ -1446,28 +1447,16 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
       home: Scaffold(
         appBar: AppBar(
           title: const Text('LIFE RPG'),
-          actions: [
-            IconButton(
-              tooltip: 'Configurar ruta',
-              onPressed: _configureStudyRoute,
-              icon: const Icon(Icons.tune),
-            ),
-          ],
+          actions: [],
         ),
         body: _loading
             ? const Center(child: CircularProgressIndicator())
             : screens[_selectedIndex],
-        floatingActionButton: _selectedIndex == 0
-            ? FloatingActionButton(
-                onPressed: () => _addOrEditMission(),
-                child: const Icon(Icons.add),
-              )
-            : null,
         bottomNavigationBar: NavigationBar(
           selectedIndex: _selectedIndex,
           onDestinationSelected: (idx) => setState(() => _selectedIndex = idx),
           destinations: const [
-            NavigationDestination(icon: Icon(Icons.today), label: 'Hoy'),
+            NavigationDestination(icon: Icon(Icons.school_outlined), label: 'Materias'),
             NavigationDestination(icon: Icon(Icons.hub), label: 'Mapa'),
             NavigationDestination(
               icon: Icon(Icons.library_books),
