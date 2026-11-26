@@ -739,7 +739,7 @@ class _SubjectDetailPageState extends State<_SubjectDetailPage> {
           ),
           const SizedBox(height: 20),
           Row(children: [
-            Expanded(child: Text('Temas y subtemas', style: Theme.of(context).textTheme.titleLarge)),
+            Expanded(child: Text('Temas del programa', style: Theme.of(context).textTheme.titleLarge)),
             TextButton.icon(
               onPressed: () async { await widget.onAddManualTopic(); if (mounted) setState(() {}); },
               icon: const Icon(Icons.add), label: const Text('Agregar tema')),
