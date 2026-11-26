@@ -32,6 +32,17 @@ class StudySubject {
       );
 }
 
+enum MissionEvidence { independent, withHints, withExample }
+
+int evidenceAdjustedGain(int baseGain, MissionEvidence evidence) {
+  final multiplier = switch (evidence) {
+    MissionEvidence.independent => 1.0,
+    MissionEvidence.withHints => 0.65,
+    MissionEvidence.withExample => 0.35,
+  };
+  return (baseGain * multiplier).round();
+}
+
 class GeneratedMission {
   final String title;
   final String description;
