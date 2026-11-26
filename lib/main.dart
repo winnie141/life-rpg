@@ -927,19 +927,19 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
         const SizedBox(height: 16),
         if (_documents.isEmpty && _notes.isEmpty)
           const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('Tu biblioteca está vacía. Podés empezar subiendo un PDF o una foto de tus apuntes.'))),
-        if (_documents.isNotEmpty) Text('Materiales (\${_documents.length})', style: Theme.of(context).textTheme.titleMedium),
+        if (_documents.isNotEmpty) Text('Materiales (${_documents.length})', style: Theme.of(context).textTheme.titleMedium),
         ..._documents.map((item) => Card(child: ListTile(
           leading: item.kind == 'image'
             ? ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.file(File(item.path), width: 48, height: 56, fit: BoxFit.cover))
             : const Icon(Icons.picture_as_pdf, size: 34),
           title: Text(item.title),
-          subtitle: Text('\${item.subject}\${item.topic.isEmpty ? '' : ' · \${item.topic}'} · \${item.kind == 'image' ? 'Imagen' : 'PDF'}'),
+          subtitle: Text('${item.subject}${item.topic.isEmpty ? '' : ' · ${item.topic}'} · ${item.kind == 'image' ? 'Imagen' : 'PDF'}'),
           onTap: () => _openLibraryDocument(item),
           trailing: IconButton(tooltip: 'Eliminar material', icon: const Icon(Icons.delete_outline), onPressed: () => _deleteLibraryDocument(item)),
         ))),
         if (_notes.isNotEmpty) Text('Notas escritas', style: Theme.of(context).textTheme.titleMedium),
         ..._notes.map((n) => Card(child: ListTile(
-          title: Text(n.title), subtitle: Text('\${n.subject} · \${n.topic}\\n\${n.content}'), isThreeLine: true,
+          title: Text(n.title), subtitle: Text('${n.subject} · ${n.topic}\\n${n.content}'), isThreeLine: true,
           trailing: IconButton(icon: const Icon(Icons.delete), onPressed: () {
             setState(() => _notes.removeWhere((x) => x.id == n.id)); _saveNotes();
           }),
@@ -1072,11 +1072,11 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
     }
     try {
       final directory = await getApplicationDocumentsDirectory();
-      final folder = Directory('\${directory.path}/library');
+      final folder = Directory('${directory.path}/library');
       if (!await folder.exists()) await folder.create(recursive: true);
       final id = DateTime.now().microsecondsSinceEpoch.toString();
       final extension = originalName.contains('.') ? originalName.substring(originalName.lastIndexOf('.')) : (kind == 'image' ? '.jpg' : '.pdf');
-      final savedPath = '\${folder.path}/$id$extension';
+      final savedPath = '${folder.path}/$id$extension';
       await File(sourcePath).copy(savedPath);
       setState(() => _documents.insert(0, LibraryDocumentItem(
         id: id, title: titleCtrl.text.trim().isEmpty ? originalName : titleCtrl.text.trim(),
