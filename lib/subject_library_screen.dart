@@ -9,6 +9,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
+import 'package:pdfx/pdfx.dart' as pdfx;
 
 import 'study_structure.dart';
 import 'topic_learning_content.dart';
@@ -25,6 +26,7 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
   static const _documentsKey = 'life_rpg_subject_documents_v1';
   final ImagePicker _imagePicker = ImagePicker();
   final ProgramTopicParser _programParser = const ProgramTopicParser();
+  final TopicExtractor _topicExtractor = const TopicExtractor();
   final Map<String, List<StudyTopic>> _topics = {};
   final List<_SubjectDocument> _documents = [];
   bool _loading = true;
@@ -256,14 +258,23 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
   Future<String> _extract(_SubjectDocument doc) async {
     if (doc.extractedText != null) return doc.extractedText!;
     if (doc.kind == 'text') return '';
+
     if (doc.kind == 'pdf') {
-      PdfDocument? pdf;
+      PdfDocument? selectablePdf;
+      var text = '';
       try {
-        pdf = PdfDocument(inputBytes: await File(doc.path).readAsBytes());
-        doc.extractedText = PdfTextExtractor(pdf).extractText().trim();
+        selectablePdf = PdfDocument(inputBytes: await File(doc.path).readAsBytes());
+        text = PdfTextExtractor(selectablePdf).extractText().trim();
       } finally {
-        pdf?.dispose();
+        selectablePdf?.dispose();
       }
+
+      // A scanned PDF has no selectable text. Render its pages and pass each
+      // image through ML Kit instead of leaving the document unreadable.
+      if (text.isEmpty) {
+        text = await _recognizeScannedPdf(doc.path);
+      }
+      doc.extractedText = text;
     } else {
       final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
       try {
@@ -275,6 +286,60 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
     }
     await _save();
     return doc.extractedText ?? '';
+  }
+
+  Future<String> _recognizeScannedPdf(String path) async {
+    pdfx.PdfDocument? document;
+    TextRecognizer? recognizer;
+    final recognizedPages = <String>[];
+    final temporaryFiles = <File>[];
+    try {
+      document = await pdfx.PdfDocument.openFile(path);
+      recognizer = TextRecognizer(script: TextRecognitionScript.latin);
+      // Keep processing bounded so a very large scan does not freeze the app.
+      final pageLimit = document.pagesCount < 40 ? document.pagesCount : 40;
+      final tempDirectory = await getTemporaryDirectory();
+
+      for (var pageNumber = 1; pageNumber <= pageLimit; pageNumber++) {
+        final page = await document.getPage(pageNumber);
+        try {
+          final image = await page.render(
+            width: (page.width * 2).round(),
+            height: (page.height * 2).round(),
+            format: pdfx.PdfPageImageFormat.jpeg,
+            backgroundColor: '#ffffff',
+          );
+          final imageFile = File(
+            '${tempDirectory.path}/life_rpg_ocr_${DateTime.now().microsecondsSinceEpoch}_$pageNumber.jpg',
+          );
+          await imageFile.writeAsBytes(image.bytes, flush: true);
+          temporaryFiles.add(imageFile);
+          final result = await recognizer.processImage(
+            InputImage.fromFilePath(imageFile.path),
+          );
+          final pageText = result.text.trim();
+          if (pageText.isNotEmpty) {
+            recognizedPages.add('[Página $pageNumber]\n$pageText');
+          }
+        } finally {
+          await page.close();
+        }
+      }
+
+      var result = recognizedPages.join('\n\n');
+      if (document.pagesCount > pageLimit) {
+        result += '\n\n[Se procesaron las primeras $pageLimit páginas de ${document.pagesCount}. El resto quedó sin OCR.]';
+      }
+      return result;
+    } finally {
+      for (final file in temporaryFiles) {
+        try {
+          if (await file.exists()) await file.delete();
+        } catch (_) {}
+      }
+      await recognizer?.close();
+      await document?.close();
+    }
   }
 
   Future<void> _readDocument(_SubjectDocument doc) async {
@@ -367,10 +432,9 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
 
   Future<void> _analyzeSubject(SubjectSection subject) async {
     final docs = _subjectDocuments(subject.id);
-    final programs = docs.where((doc) => doc.category == 'program').toList();
-    if (programs.isEmpty) {
+    if (docs.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Primero cargá el programa de la materia o pegá la lista de temas en orden.')),
+        const SnackBar(content: Text('Primero cargá apuntes, guías o el programa de la materia.')),
       );
       return;
     }
@@ -379,12 +443,39 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
       for (final doc in docs) {
         await _extract(doc);
       }
+
+      final programs = docs.where((doc) => doc.category == 'program').toList();
       final programText = programs.map((doc) => doc.extractedText ?? '')
           .where((value) => value.trim().isNotEmpty).join('\n');
-      final parsedTitles = _programParser.parse(programText);
-      if (parsedTitles.isEmpty) {
+      final programTitles = _programParser.parse(programText);
+
+      // Without an official syllabus, build a provisional structure from
+      // explicit headings in the uploaded notes and guides.
+      final inferredTitles = <String>[];
+      final seenTitles = <String>{};
+      for (final doc in docs.where((item) => item.category != 'program')) {
+        for (final suggestion in _topicExtractor.extract(doc.extractedText ?? '')) {
+          final key = _normalizeMatch(suggestion.title);
+          if (key.isNotEmpty && seenTitles.add(key)) inferredTitles.add(suggestion.title);
+        }
+      }
+
+      final hasProgram = programTitles.isNotEmpty;
+      final proposedTitles = hasProgram ? programTitles : inferredTitles;
+      final fallbackTitles = <String>[];
+      if (proposedTitles.isEmpty) {
+        for (final doc in docs.where((item) => item.category != 'program')) {
+          final candidate = doc.section.trim().isNotEmpty ? doc.section.trim() : doc.title.trim();
+          if (candidate.isNotEmpty &&
+              !fallbackTitles.any((value) => _sameText(value, candidate))) {
+            fallbackTitles.add(candidate);
+          }
+        }
+      }
+      final finalTitles = proposedTitles.isNotEmpty ? proposedTitles : fallbackTitles;
+      if (finalTitles.isEmpty) {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No pude reconocer la lista. Revisá el texto: debe tener un tema por línea.')),
+          const SnackBar(content: Text('No encontré temas claros. Revisá que los archivos tengan texto legible o agregá un tema manualmente.')),
         );
         return;
       }
@@ -392,7 +483,7 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
       final topics = _subjectTopics(subject.id);
       final previous = List<StudyTopic>.from(topics);
       final rebuilt = <StudyTopic>[];
-      for (final title in parsedTitles) {
+      for (final title in finalTitles) {
         StudyTopic? existing;
         for (final candidate in previous) {
           if (_sameText(candidate.title, title)) { existing = candidate; break; }
@@ -402,6 +493,8 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
           title: title,
         ));
       }
+      // Keep manually created topics and their progress rather than deleting
+      // them when a new analysis proposes a shorter list.
       for (final old in previous) {
         if (!rebuilt.any((topic) => topic.id == old.id)) rebuilt.add(old);
       }
@@ -412,16 +505,22 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
       for (final doc in docs.where((item) => item.category != 'program')) {
         final section = _normalizeMatch(doc.section);
         final extracted = _normalizeMatch(doc.extractedText ?? '');
+        final titleText = _normalizeMatch(doc.title);
         final matches = topics.where((topic) {
           final title = _normalizeMatch(topic.title);
           if (title.isEmpty) return false;
           if (section.isNotEmpty && section == title) return true;
+          if (titleText == title) return true;
           return extracted.contains(title);
         }).toList();
         if (matches.isEmpty) {
           unmatched.add(doc);
         } else {
-          for (final topic in matches) { topic.sourceDocumentIds.add(doc.id); }
+          for (final topic in matches) {
+            if (!topic.sourceDocumentIds.contains(doc.id)) {
+              topic.sourceDocumentIds.add(doc.id);
+            }
+          }
         }
       }
       await _save();
@@ -432,7 +531,9 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
           title: const Text('Análisis terminado'),
           content: SizedBox(width: double.maxFinite, child: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('${parsedTitles.length} temas organizados en el orden del programa.'),
+              Text(hasProgram
+                ? '${finalTitles.length} temas organizados según el programa.'
+                : '${finalTitles.length} temas provisorios detectados a partir de tus archivos.'),
               const SizedBox(height: 12),
               const Text('Documentos relacionados:', style: TextStyle(fontWeight: FontWeight.w600)),
               ...topics.map((topic) => Padding(
@@ -445,7 +546,9 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
                 ...unmatched.map((doc) => Text('• ${doc.title}')),
               ],
               const SizedBox(height: 12),
-              const Text('La asociación usa la sección que indiques o coincidencias exactas del título en el texto. Revisá los resultados: no es una interpretación semántica completa.'),
+              Text(hasProgram
+                ? 'El programa define el orden. Las asociaciones se basan en secciones y coincidencias de texto; revisá los resultados.'
+                : 'La estructura es provisoria: se detectaron encabezados o se usaron los títulos de tus archivos. Cuando agregues el programa oficial, volvé a analizar para ordenar los temas. La asociación no es una interpretación semántica completa.'),
             ]),
           )),
           actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Aceptar'))],
@@ -732,7 +835,7 @@ class _SubjectDetailPageState extends State<_SubjectDetailPage> {
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: documents.any((doc) => doc.category == 'program') ? () async {
+              onPressed: documents.isNotEmpty ? () async {
                 await widget.onAnalyze();
                 if (mounted) setState(() {});
               } : null,
@@ -751,7 +854,7 @@ class _SubjectDetailPageState extends State<_SubjectDetailPage> {
           if (widget.topics.isEmpty)
             const Card(child: Padding(
               padding: EdgeInsets.all(16),
-              child: Text('Todavía no hay temas. Cargá el programa y tocá “Analizar materia”, o agregá un tema manualmente.'),
+              child: Text('Todavía no hay temas. Cargá apuntes o guías y tocá “Analizar materia”. El programa oficial es opcional: sin él se crea una estructura provisoria.'),
             )),
           ...widget.topics.map((topic) => Card(child: ListTile(
             title: Text(topic.title),
