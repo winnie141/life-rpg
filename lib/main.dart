@@ -965,7 +965,9 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
                 Card(child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('MATERIAL DE REFERENCIA', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('FRAGMENTO SELECCIONADO PARA TRABAJAR', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    const Text('La consigna de esta misión se apoya en este contenido de tu archivo.'),
                     const SizedBox(height: 8),
                     Text(mission.sourceTitle!, style: Theme.of(context).textTheme.titleMedium),
                     if ((mission.sourceExcerpt ?? '').isNotEmpty) ...[
@@ -1045,6 +1047,14 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
 
   String _missionInstructions(MissionItem mission) {
     final t = mission.title.toLowerCase();
+    if (mission.sourceTitle != null) {
+      return '1. Leé el fragmento seleccionado que aparece más abajo. No intentes memorizarlo de entrada.\\n\\n'
+          '2. Marcá la idea principal y los términos técnicos que aparecen.\\n\\n'
+          '3. Respondé la consigna de la misión usando tus palabras y apoyándote en el fragmento.\\n\\n'
+          '4. Volvé al texto y comprobá qué partes de tu respuesta están respaldadas y cuáles agregaste o confundiste.\\n\\n'
+          '5. Si el material no alcanza para responder, anotá qué información falta en vez de inventarla.\\n\\n'
+          'ENTREGA: una respuesta propia contrastada con el fragmento original.';
+    }
     if (t.contains('entender el mecanismo')) {
       return '1. Identificá qué fenómeno o idea explica el material.\n\n'
           '2. Buscá qué lo provoca y bajo qué condiciones ocurre.\n\n'
