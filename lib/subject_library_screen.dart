@@ -146,12 +146,12 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
     }
     try {
       final directory = await getApplicationDocumentsDirectory();
-      final folder = Directory('\${directory.path}/subject_materials');
+      final folder = Directory('${directory.path}/subject_materials');
       if (!await folder.exists()) await folder.create(recursive: true);
       final id = DateTime.now().microsecondsSinceEpoch.toString();
       final dot = originalName.lastIndexOf('.');
       final extension = dot >= 0 ? originalName.substring(dot) : (kind == 'image' ? '.jpg' : '.pdf');
-      final path = '\${folder.path}/$id$extension';
+      final path = '${folder.path}/$id$extension';
       await File(sourcePath).copy(path);
       _documents.insert(0, _SubjectDocument(
         id: id, subjectId: subject.id,
@@ -163,7 +163,7 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
       if (mounted) {
         setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('\${_categoryTitle(category)} guardado.')),
+          SnackBar(content: Text('${_categoryTitle(category)} guardado.')),
         );
       }
     } catch (error) {
@@ -183,7 +183,7 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
   };
 
   Future<void> _addProgramText(SubjectSection subject) async {
-    final titleController = TextEditingController(text: 'Programa de \${subject.title}');
+    final titleController = TextEditingController(text: 'Programa de ${subject.title}');
     final contentController = TextEditingController();
     final accepted = await showDialog<bool>(
       context: context,
@@ -210,7 +210,7 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
       _documents.insert(0, _SubjectDocument(
         id: DateTime.now().microsecondsSinceEpoch.toString(),
         subjectId: subject.id,
-        title: titleController.text.trim().isEmpty ? 'Programa de \${subject.title}' : titleController.text.trim(),
+        title: titleController.text.trim().isEmpty ? 'Programa de ${subject.title}' : titleController.text.trim(),
         path: '', kind: 'text', category: 'program', section: '',
         extractedText: text,
       ));
@@ -431,17 +431,17 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
           title: const Text('Análisis terminado'),
           content: SizedBox(width: double.maxFinite, child: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('\${parsedTitles.length} temas organizados en el orden del programa.'),
+              Text('${parsedTitles.length} temas organizados en el orden del programa.'),
               const SizedBox(height: 12),
               const Text('Documentos relacionados:', style: TextStyle(fontWeight: FontWeight.w600)),
               ...topics.map((topic) => Padding(
                 padding: const EdgeInsets.only(top: 6),
-                child: Text('• \${topic.title}: \${topic.sourceDocumentIds.length} documento(s)'),
+                child: Text('• ${topic.title}: ${topic.sourceDocumentIds.length} documento(s)'),
               )),
               if (unmatched.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 const Text('Sin asociación automática (podés editar su sección):', style: TextStyle(fontWeight: FontWeight.w600)),
-                ...unmatched.map((doc) => Text('• \${doc.title}')),
+                ...unmatched.map((doc) => Text('• ${doc.title}')),
               ],
               const SizedBox(height: 12),
               const Text('La asociación usa la sección que indiques o coincidencias exactas del título en el texto. Revisá los resultados: no es una interpretación semántica completa.'),
@@ -647,7 +647,7 @@ class _SubjectDetailPageState extends State<_SubjectDetailPage> {
               subtitle: Text([
                 if (doc.section.isNotEmpty) doc.section,
                 if (doc.extractedText == null) 'Texto todavía no leído'
-                else 'Texto leído · \${doc.extractedText!.length} caracteres',
+                else 'Texto leído · ${doc.extractedText!.length} caracteres',
               ].join(' · ')),
               onTap: () async { await widget.onOpenDocument(doc); if (mounted) setState(() {}); },
               trailing: PopupMenuButton<String>(
@@ -886,7 +886,7 @@ class _TopicDetailPageState extends State<_TopicDetailPage> {
 class _SubjectDocument {
   final String id;
   final String subjectId;
-  final String title;
+  String title;
   final String path;
   final String kind;
   String category;
