@@ -508,7 +508,7 @@ class _SubjectDetailPageState extends State<_SubjectDetailPage> {
           const SizedBox(height: 20),
           Row(children: [
             Expanded(child: Text('Temas', style: Theme.of(context).textTheme.titleLarge)),
-            TextButton.icon(onPressed: widget.onEditTopics,
+            TextButton.icon(onPressed: () async { await widget.onEditTopics(); if (mounted) setState(() {}); },
               icon: const Icon(Icons.auto_awesome_outlined), label: const Text('Detectar / agregar')),
           ]),
           const Text('La detección busca títulos y numeraciones. Siempre podés corregir la lista; no interpreta por sí sola el contenido.'),
@@ -530,7 +530,7 @@ class _SubjectDetailPageState extends State<_SubjectDetailPage> {
   }
 }
 
-class _TopicDetailPage extends StatelessWidget {
+class _TopicDetailPage extends StatefulWidget {
   final SubjectSection subject;
   final StudyTopic topic;
   final List<_SubjectDocument> documents;
@@ -546,13 +546,19 @@ class _TopicDetailPage extends StatelessWidget {
   });
 
   @override
+  State<_TopicDetailPage> createState() => _TopicDetailPageState();
+}
+
+class _TopicDetailPageState extends State<_TopicDetailPage> {
+  @override
   Widget build(BuildContext context) {
+    final topic = widget.topic;
     return Scaffold(
       appBar: AppBar(title: Text(topic.title)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(subject.title, style: Theme.of(context).textTheme.labelLarge),
+          Text(widget.subject.title, style: Theme.of(context).textTheme.labelLarge),
           const SizedBox(height: 6),
           Text('Progreso de comprensión', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
@@ -573,19 +579,19 @@ class _TopicDetailPage extends StatelessWidget {
                 childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 children: [
                   Text(_stagePrompt(index)),
-                  if (documents.isNotEmpty) ...[
+                  if (widget.documents.isNotEmpty) ...[
                     const SizedBox(height: 10),
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Text('Material relacionado', style: Theme.of(context).textTheme.titleSmall),
                     ),
-                    ...documents.map((doc) => ListTile(
+                    ...widget.documents.map((doc) => ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.description_outlined),
                       title: Text(doc.title),
                       trailing: IconButton(
                         icon: const Icon(Icons.text_snippet_outlined),
-                        onPressed: () => onRead(doc),
+                        onPressed: () => widget.onRead(doc),
                       ),
                     )),
                   ],
@@ -608,9 +614,8 @@ class _TopicDetailPage extends StatelessWidget {
                                 ),
                               );
                               if (confirm == true) {
-                                topic.achievedStage = index;
-                                await onSave();
-                                if (context.mounted) (context as Element).markNeedsBuild();
+                                setState(() => topic.achievedStage = index);
+                                await widget.onSave();
                               }
                             },
                       child: Text(achieved ? 'Nivel registrado' : 'Registrar como alcanzado'),
