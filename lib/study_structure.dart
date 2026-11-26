@@ -221,3 +221,31 @@ class TopicExtractor {
       .replaceAll(RegExp(r'[^a-záéíóúüñ0-9]+'), ' ')
       .trim();
 }
+
+
+/// Parses a subject syllabus where each non-empty line represents one topic.
+/// Leading numbering and bullet markers are removed, while the original order
+/// is preserved. This intentionally does not infer topics from paragraphs.
+class ProgramTopicParser {
+  const ProgramTopicParser();
+
+  List<String> parse(String sourceText) {
+    final result = <String>[];
+    final seen = <String>{};
+    for (final rawLine in sourceText.replaceAll('\\r\\n', '\\n').replaceAll('\\r', '\\n').split('\\n')) {
+      var value = rawLine.trim();
+      if (value.isEmpty) continue;
+      value = value.replaceFirst(RegExp(r'^[•*–—-]\\s*'), '');
+      value = value.replaceFirst(RegExp(r'^\\d+(?:\\.\\d+)*[.)]?\\s+'), '');
+      value = value.replaceFirst(
+        RegExp(r'^(?:unidad|tema|cap[ií]tulo|secci[oó]n)\\s*(?:n[º°.]?\\s*)?[\\dIVX.-]*\\s*[:.)-]?\\s*', caseSensitive: false),
+        '',
+      );
+      value = value.replaceAll(RegExp(r'\\s+'), ' ').trim();
+      if (value.length < 2 || value.length > 120) continue;
+      final key = value.toLowerCase();
+      if (seen.add(key)) result.add(value);
+    }
+    return result;
+  }
+}
