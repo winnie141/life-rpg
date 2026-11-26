@@ -23,7 +23,7 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
   static const _topicsKey = 'life_rpg_study_topics_v1';
   static const _documentsKey = 'life_rpg_subject_documents_v1';
   final ImagePicker _imagePicker = ImagePicker();
-  final TopicExtractor _extractor = const TopicExtractor();
+  final ProgramTopicParser _programParser = const ProgramTopicParser();
   final Map<String, List<StudyTopic>> _topics = {};
   final List<_SubjectDocument> _documents = [];
   bool _loading = true;
@@ -52,7 +52,7 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
         final decoded = jsonDecode(rawDocs) as List<dynamic>;
         _documents.addAll(decoded
             .map((item) => _SubjectDocument.fromJson(item as Map<String, dynamic>))
-            .where((item) => File(item.path).existsSync()));
+            .where((item) => item.kind == 'text' || (item.path.isNotEmpty && File(item.path).existsSync())));
       }
     } catch (_) {
       // Keep the rest of the local library available if an old entry is damaged.
@@ -81,8 +81,10 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
         subject: subject,
         topics: _subjectTopics(subject.id),
         documents: () => _subjectDocuments(subject.id),
-        onImport: (kind, camera) => _import(subject, kind, camera: camera),
-        onEditTopics: () => _editTopics(subject),
+        onImport: (kind, category, camera) => _import(subject, kind, category, camera: camera),
+        onAddProgramText: () => _addProgramText(subject),
+        onAnalyze: () => _analyzeSubject(subject),
+        onEditDocument: _editDocument,
         onAddManualTopic: () => _manualTopic(subject),
         onOpenTopic: (topic) => _openTopic(subject, topic),
         onEditTopic: _editTopic,
@@ -95,15 +97,12 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _import(SubjectSection subject, String kind,
+  Future<void> _import(SubjectSection subject, String kind, String category,
       {bool camera = false}) async {
     String? sourcePath;
     String originalName = '';
     if (kind == 'pdf') {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['pdf'],
-      );
+      final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['pdf']);
       if (result == null || result.files.single.path == null) return;
       sourcePath = result.files.single.path;
       originalName = result.files.single.name;
@@ -116,68 +115,146 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
       sourcePath = photo.path;
       originalName = photo.name;
     }
-
     if (!mounted) return;
     final titleController = TextEditingController(text: originalName);
+    final sectionController = TextEditingController();
     final accepted = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Agregar a ${subject.title}'),
-        content: TextField(
-          controller: titleController,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Nombre del material'),
-        ),
+        title: Text(_categoryTitle(category)),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: titleController, autofocus: true,
+            decoration: const InputDecoration(labelText: 'Título del archivo')),
+          if (category != 'program') ...[
+            const SizedBox(height: 12),
+            TextField(controller: sectionController,
+              decoration: const InputDecoration(
+                labelText: 'Tema o sección relacionada (opcional)',
+                hintText: 'Ej.: Integrales definidas')),
+          ],
+        ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Guardar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Guardar')),
         ],
       ),
     );
     if (accepted != true || sourcePath == null || !mounted) {
       titleController.dispose();
+      sectionController.dispose();
       return;
     }
-
     try {
       final directory = await getApplicationDocumentsDirectory();
-      final folder = Directory('${directory.path}/subject_materials');
+      final folder = Directory('\${directory.path}/subject_materials');
       if (!await folder.exists()) await folder.create(recursive: true);
       final id = DateTime.now().microsecondsSinceEpoch.toString();
       final dot = originalName.lastIndexOf('.');
       final extension = dot >= 0 ? originalName.substring(dot) : (kind == 'image' ? '.jpg' : '.pdf');
-      final path = '${folder.path}/$id$extension';
+      final path = '\${folder.path}/$id$extension';
       await File(sourcePath).copy(path);
-      final doc = _SubjectDocument(
-        id: id,
-        subjectId: subject.id,
+      _documents.insert(0, _SubjectDocument(
+        id: id, subjectId: subject.id,
         title: titleController.text.trim().isEmpty ? originalName : titleController.text.trim(),
-        path: path,
-        kind: kind,
-      );
-      _documents.insert(0, doc);
+        path: path, kind: kind, category: category,
+        section: sectionController.text.trim(),
+      ));
       await _save();
       if (mounted) {
         setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Material guardado en esta materia.')),
+          SnackBar(content: Text('\${_categoryTitle(category)} guardado.')),
         );
       }
     } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo guardar el archivo: $error')),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo guardar el archivo: $error')),
+      );
     } finally {
       titleController.dispose();
+      sectionController.dispose();
     }
+  }
+
+  String _categoryTitle(String category) => switch (category) {
+    'program' => 'Cargar programa de la materia',
+    'guide' => 'Cargar guía o ejercicios',
+    _ => 'Cargar material de estudio',
+  };
+
+  Future<void> _addProgramText(SubjectSection subject) async {
+    final titleController = TextEditingController(text: 'Programa de \${subject.title}');
+    final contentController = TextEditingController();
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Pegar programa de la materia'),
+        content: SizedBox(width: double.maxFinite, child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: titleController,
+            decoration: const InputDecoration(labelText: 'Título del programa')),
+          const SizedBox(height: 12),
+          TextField(controller: contentController, minLines: 7, maxLines: 12,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(), labelText: 'Temas en orden',
+              hintText: '1. Límites\n2. Derivadas\n3. Integrales indefinidas\n4. Integrales definidas',
+              helperText: 'Escribí un tema por línea. Se conserva el orden.')),
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Guardar programa')),
+        ],
+      ),
+    );
+    final text = contentController.text.trim();
+    if (accepted == true && text.isNotEmpty) {
+      _documents.insert(0, _SubjectDocument(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        subjectId: subject.id,
+        title: titleController.text.trim().isEmpty ? 'Programa de \${subject.title}' : titleController.text.trim(),
+        path: '', kind: 'text', category: 'program', section: '',
+        extractedText: text,
+      ));
+      await _save();
+      if (mounted) setState(() {});
+    }
+    titleController.dispose();
+    contentController.dispose();
+  }
+
+  Future<void> _editDocument(_SubjectDocument doc) async {
+    final titleController = TextEditingController(text: doc.title);
+    final sectionController = TextEditingController(text: doc.section);
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Editar documento'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: titleController, decoration: const InputDecoration(labelText: 'Título')),
+          if (doc.category != 'program') ...[
+            const SizedBox(height: 10),
+            TextField(controller: sectionController,
+              decoration: const InputDecoration(labelText: 'Tema o sección relacionada')),
+          ],
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Guardar')),
+        ],
+      ),
+    );
+    if (saved == true) {
+      doc.title = titleController.text.trim().isEmpty ? doc.title : titleController.text.trim();
+      doc.section = sectionController.text.trim();
+      await _save();
+      if (mounted) setState(() {});
+    }
+    titleController.dispose();
+    sectionController.dispose();
   }
 
   Future<String> _extract(_SubjectDocument doc) async {
     if (doc.extractedText != null) return doc.extractedText!;
+    if (doc.kind == 'text') return '';
     if (doc.kind == 'pdf') {
       PdfDocument? pdf;
       try {
@@ -252,7 +329,9 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
   }
 
   Future<void> _openDocument(_SubjectDocument doc) async {
-    if (doc.kind == 'image') {
+    if (doc.kind == 'text') {
+      await _readDocument(doc);
+    } else if (doc.kind == 'image') {
       await showDialog<void>(context: context, builder: (ctx) => Dialog(
         child: InteractiveViewer(child: Image.file(File(doc.path), fit: BoxFit.contain)),
       ));
@@ -280,77 +359,112 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
         topic.sourceDocumentIds.remove(doc.id);
       }
     }
-    try { await File(doc.path).delete(); } catch (_) {}
+    if (doc.path.isNotEmpty) { try { await File(doc.path).delete(); } catch (_) {} }
     await _save();
     if (mounted) setState(() {});
   }
 
-  Future<void> _editTopics(SubjectSection subject) async {
-    final topics = _subjectTopics(subject.id);
-    final material = _subjectDocuments(subject.id)
-        .where((doc) => (doc.extractedText ?? '').trim().isNotEmpty)
-        .toList();
-    if (material.isEmpty) {
+  Future<void> _analyzeSubject(SubjectSection subject) async {
+    final docs = _subjectDocuments(subject.id);
+    final programs = docs.where((doc) => doc.category == 'program').toList();
+    if (programs.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Primero leé el texto de un PDF o una foto para poder detectar títulos.')),
+        const SnackBar(content: Text('Primero cargá el programa de la materia o pegá la lista de temas en orden.')),
       );
       return;
     }
-    final combined = material.map((doc) => doc.extractedText!).join('\n');
-    final suggestions = _extractor.extract(combined);
-    if (suggestions.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No encontré títulos claros. Podés agregar los temas manualmente.')),
-      );
-    }
-    final selected = <String>{};
-    if (suggestions.isNotEmpty) {
-      selected.addAll(suggestions.map((item) => item.title));
-      final accepted = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => StatefulBuilder(builder: (ctx, refresh) => AlertDialog(
-          title: const Text('Temas sugeridos'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: SingleChildScrollView(child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Son títulos detectados por su formato (numeración, Unidad/Tema o mayúsculas). Revisalos: no es una interpretación inteligente del contenido.'),
-                const SizedBox(height: 10),
-                ...suggestions.map((suggestion) => CheckboxListTile(
-                  value: selected.contains(suggestion.title),
-                  title: Text(suggestion.title),
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  onChanged: (value) => refresh(() {
-                    if (value == true) { selected.add(suggestion.title); }
-                    else { selected.remove(suggestion.title); }
-                  }),
-                )),
-              ],
-            )),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Agregar seleccionados')),
-          ],
-        )),
-      );
-      if (accepted != true) return;
-    }
-    for (final title in selected) {
-      final exists = topics.any((topic) => topic.title.toLowerCase() == title.toLowerCase());
-      if (!exists) {
-        topics.add(StudyTopic(
-          id: DateTime.now().microsecondsSinceEpoch.toString() + title.hashCode.toString(),
+    if (mounted) setState(() => _processingId = 'analyzing');
+    try {
+      for (final doc in docs) {
+        await _extract(doc);
+      }
+      final programText = programs.map((doc) => doc.extractedText ?? '')
+          .where((value) => value.trim().isNotEmpty).join('\n');
+      final parsedTitles = _programParser.parse(programText);
+      if (parsedTitles.isEmpty) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No pude reconocer la lista. Revisá el texto: debe tener un tema por línea.')),
+        );
+        return;
+      }
+
+      final topics = _subjectTopics(subject.id);
+      final previous = List<StudyTopic>.from(topics);
+      final rebuilt = <StudyTopic>[];
+      for (final title in parsedTitles) {
+        StudyTopic? existing;
+        for (final candidate in previous) {
+          if (_sameText(candidate.title, title)) { existing = candidate; break; }
+        }
+        rebuilt.add(existing ?? StudyTopic(
+          id: DateTime.now().microsecondsSinceEpoch.toString() + rebuilt.length.toString(),
           title: title,
-          sourceDocumentIds: material.map((doc) => doc.id).toList(),
         ));
       }
+      for (final old in previous) {
+        if (!rebuilt.any((topic) => topic.id == old.id)) rebuilt.add(old);
+      }
+      topics..clear()..addAll(rebuilt);
+      for (final topic in topics) { topic.sourceDocumentIds.clear(); }
+
+      final unmatched = <_SubjectDocument>[];
+      for (final doc in docs.where((item) => item.category != 'program')) {
+        final section = _normalizeMatch(doc.section);
+        final extracted = _normalizeMatch(doc.extractedText ?? '');
+        final matches = topics.where((topic) {
+          final title = _normalizeMatch(topic.title);
+          if (title.isEmpty) return false;
+          if (section.isNotEmpty && (section == title || section.contains(title) || title.contains(section))) return true;
+          return extracted.contains(title);
+        }).toList();
+        if (matches.isEmpty) {
+          unmatched.add(doc);
+        } else {
+          for (final topic in matches) { topic.sourceDocumentIds.add(doc.id); }
+        }
+      }
+      await _save();
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Análisis terminado'),
+          content: SizedBox(width: double.maxFinite, child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('\${parsedTitles.length} temas organizados en el orden del programa.'),
+              const SizedBox(height: 12),
+              const Text('Documentos relacionados:', style: TextStyle(fontWeight: FontWeight.w600)),
+              ...topics.map((topic) => Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text('• \${topic.title}: \${topic.sourceDocumentIds.length} documento(s)'),
+              )),
+              if (unmatched.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Text('Sin asociación automática (podés editar su sección):', style: TextStyle(fontWeight: FontWeight.w600)),
+                ...unmatched.map((doc) => Text('• \${doc.title}')),
+              ],
+              const SizedBox(height: 12),
+              const Text('La asociación usa la sección que indiques o coincidencias exactas del título en el texto. Revisá los resultados: no es una interpretación semántica completa.'),
+            ]),
+          )),
+          actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Aceptar'))],
+        ),
+      );
+      if (mounted) setState(() {});
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo analizar la materia: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _processingId = null);
     }
-    await _save();
-    if (mounted) setState(() {});
   }
+
+  bool _sameText(String a, String b) => _normalizeMatch(a) == _normalizeMatch(b);
+
+  String _normalizeMatch(String value) => value.toLowerCase()
+      .replaceAll(RegExp(r'[^a-záéíóúüñ0-9]+'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ').trim();
 
   Future<void> _manualTopic(SubjectSection subject) async {
     final controller = TextEditingController();
@@ -483,8 +597,10 @@ class _SubjectDetailPage extends StatefulWidget {
   final SubjectSection subject;
   final List<StudyTopic> topics;
   final List<_SubjectDocument> Function() documents;
-  final Future<void> Function(String kind, bool camera) onImport;
-  final Future<void> Function() onEditTopics;
+  final Future<void> Function(String kind, String category, bool camera) onImport;
+  final Future<void> Function() onAddProgramText;
+  final Future<void> Function() onAnalyze;
+  final Future<void> Function(_SubjectDocument doc) onEditDocument;
   final Future<void> Function() onAddManualTopic;
   final Future<void> Function(StudyTopic topic) onOpenTopic;
   final Future<void> Function(StudyTopic topic) onEditTopic;
@@ -494,18 +610,11 @@ class _SubjectDetailPage extends StatefulWidget {
   final Future<void> Function(_SubjectDocument doc) onDeleteDocument;
 
   const _SubjectDetailPage({
-    required this.subject,
-    required this.topics,
-    required this.documents,
-    required this.onImport,
-    required this.onEditTopics,
-    required this.onAddManualTopic,
-    required this.onOpenTopic,
-    required this.onEditTopic,
-    required this.onDeleteTopic,
-    required this.onOpenDocument,
-    required this.onReadDocument,
-    required this.onDeleteDocument,
+    required this.subject, required this.topics, required this.documents,
+    required this.onImport, required this.onAddProgramText, required this.onAnalyze,
+    required this.onEditDocument, required this.onAddManualTopic,
+    required this.onOpenTopic, required this.onEditTopic, required this.onDeleteTopic,
+    required this.onOpenDocument, required this.onReadDocument, required this.onDeleteDocument,
   });
 
   @override
@@ -513,6 +622,54 @@ class _SubjectDetailPage extends StatefulWidget {
 }
 
 class _SubjectDetailPageState extends State<_SubjectDetailPage> {
+  Widget _uploadSection({
+    required String title,
+    required String description,
+    required List<_SubjectDocument> docs,
+    required List<Widget> buttons,
+  }) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Text(description),
+          const SizedBox(height: 10),
+          Wrap(spacing: 8, runSpacing: 8, children: buttons),
+          if (docs.isNotEmpty) ...[
+            const Divider(height: 20),
+            ...docs.map((doc) => ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(doc.kind == 'image' ? Icons.image_outlined : doc.kind == 'text' ? Icons.subject : Icons.picture_as_pdf),
+              title: Text(doc.title),
+              subtitle: Text([
+                if (doc.section.isNotEmpty) doc.section,
+                if (doc.extractedText == null) 'Texto todavía no leído'
+                else 'Texto leído · \${doc.extractedText!.length} caracteres',
+              ].join(' · ')),
+              onTap: () async { await widget.onOpenDocument(doc); if (mounted) setState(() {}); },
+              trailing: PopupMenuButton<String>(
+                onSelected: (value) async {
+                  if (value == 'read') await widget.onReadDocument(doc);
+                  if (value == 'edit') await widget.onEditDocument(doc);
+                  if (value == 'delete') await widget.onDeleteDocument(doc);
+                  if (mounted) setState(() {});
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'read', child: Text('Leer / editar texto')),
+                  PopupMenuItem(value: 'edit', child: Text('Editar título / sección')),
+                  PopupMenuItem(value: 'delete', child: Text('Eliminar')),
+                ],
+              ),
+            )),
+          ],
+        ]),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final documents = widget.documents();
@@ -522,61 +679,78 @@ class _SubjectDetailPageState extends State<_SubjectDetailPage> {
         padding: const EdgeInsets.all(16),
         children: [
           Text(widget.subject.description),
-          const SizedBox(height: 16),
-          Text('Material de estudio', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          Wrap(spacing: 8, runSpacing: 8, children: [
-            FilledButton.icon(onPressed: () async { await widget.onImport('pdf', false); if (mounted) setState(() {}); },
-              icon: const Icon(Icons.picture_as_pdf), label: const Text('Subir PDF')),
-            OutlinedButton.icon(onPressed: () async { await widget.onImport('image', false); if (mounted) setState(() {}); },
-              icon: const Icon(Icons.photo_library_outlined), label: const Text('Elegir foto')),
-            OutlinedButton.icon(onPressed: () async { await widget.onImport('image', true); if (mounted) setState(() {}); },
-              icon: const Icon(Icons.camera_alt_outlined), label: const Text('Sacar foto')),
-          ]),
-          const SizedBox(height: 8),
-          if (documents.isEmpty)
-            const Card(child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('Todavía no hay documentos en esta materia. Subí un PDF o una foto para empezar.'),
-            )),
-          ...documents.map((doc) => Card(child: ListTile(
-            leading: Icon(doc.kind == 'image' ? Icons.image_outlined : Icons.picture_as_pdf),
-            title: Text(doc.title),
-            subtitle: Text(doc.extractedText == null ? 'Texto todavía no leído' : 'Texto leído · ${doc.extractedText!.length} caracteres'),
-            onTap: () async { await widget.onOpenDocument(doc); if (mounted) setState(() {}); },
-            trailing: PopupMenuButton<String>(
-              onSelected: (value) async {
-                if (value == 'read') await widget.onReadDocument(doc);
-                if (value == 'delete') await widget.onDeleteDocument(doc);
+          const SizedBox(height: 18),
+          _uploadSection(
+            title: '1. Programa de la materia',
+            description: 'Define el orden y la estructura de los temas.',
+            docs: documents.where((doc) => doc.category == 'program').toList(),
+            buttons: [
+              FilledButton.icon(
+                onPressed: () async { await widget.onImport('pdf', 'program', false); if (mounted) setState(() {}); },
+                icon: const Icon(Icons.picture_as_pdf), label: const Text('Subir programa PDF')),
+              OutlinedButton.icon(
+                onPressed: () async { await widget.onImport('image', 'program', false); if (mounted) setState(() {}); },
+                icon: const Icon(Icons.photo_library_outlined), label: const Text('Foto')),
+              TextButton.icon(
+                onPressed: () async { await widget.onAddProgramText(); if (mounted) setState(() {}); },
+                icon: const Icon(Icons.edit_note), label: const Text('Pegar temas en orden')),
+            ],
+          ),
+          _uploadSection(
+            title: '2. Material de estudio',
+            description: 'Apuntes, libros, capítulos y resúmenes.',
+            docs: documents.where((doc) => doc.category == 'material').toList(),
+            buttons: [
+              FilledButton.icon(
+                onPressed: () async { await widget.onImport('pdf', 'material', false); if (mounted) setState(() {}); },
+                icon: const Icon(Icons.picture_as_pdf), label: const Text('Subir PDF')),
+              OutlinedButton.icon(
+                onPressed: () async { await widget.onImport('image', 'material', false); if (mounted) setState(() {}); },
+                icon: const Icon(Icons.photo_library_outlined), label: const Text('Foto')),
+              OutlinedButton.icon(
+                onPressed: () async { await widget.onImport('image', 'material', true); if (mounted) setState(() {}); },
+                icon: const Icon(Icons.camera_alt_outlined), label: const Text('Cámara')),
+            ],
+          ),
+          _uploadSection(
+            title: '3. Guías y ejercicios',
+            description: 'Trabajos prácticos, ejercicios resueltos y parciales anteriores.',
+            docs: documents.where((doc) => doc.category == 'guide').toList(),
+            buttons: [
+              FilledButton.icon(
+                onPressed: () async { await widget.onImport('pdf', 'guide', false); if (mounted) setState(() {}); },
+                icon: const Icon(Icons.picture_as_pdf), label: const Text('Subir guía PDF')),
+              OutlinedButton.icon(
+                onPressed: () async { await widget.onImport('image', 'guide', false); if (mounted) setState(() {}); },
+                icon: const Icon(Icons.photo_library_outlined), label: const Text('Foto')),
+              OutlinedButton.icon(
+                onPressed: () async { await widget.onImport('image', 'guide', true); if (mounted) setState(() {}); },
+                icon: const Icon(Icons.camera_alt_outlined), label: const Text('Cámara')),
+            ],
+          ),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: documents.any((doc) => doc.category == 'program') ? () async {
+                await widget.onAnalyze();
                 if (mounted) setState(() {});
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'read', child: Text('Leer / editar texto')),
-                PopupMenuItem(value: 'delete', child: Text('Eliminar')),
-              ],
-            ),
-          ))),
+              } : null,
+              icon: const Icon(Icons.auto_awesome), label: const Text('Analizar materia')),
+          ),
           const SizedBox(height: 20),
           Row(children: [
-            Expanded(child: Text('Temas', style: Theme.of(context).textTheme.titleLarge)),
-            TextButton.icon(onPressed: () async { await widget.onEditTopics(); if (mounted) setState(() {}); },
-              icon: const Icon(Icons.auto_awesome_outlined), label: const Text('Detectar temas')),
-          ]),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
+            Expanded(child: Text('Temas y subtemas', style: Theme.of(context).textTheme.titleLarge)),
+            TextButton.icon(
               onPressed: () async { await widget.onAddManualTopic(); if (mounted) setState(() {}); },
-              icon: const Icon(Icons.add),
-              label: const Text('Agregar tema manualmente'),
-            ),
-          ),
+              icon: const Icon(Icons.add), label: const Text('Agregar tema')),
+          ]),
           const SizedBox(height: 8),
-          const Text('La detección busca títulos y numeraciones. Siempre podés corregir la lista; no interpreta por sí sola el contenido.'),
+          const Text('El programa establece el orden. Los documentos se asocian por la sección que indiques o por coincidencias claras del título. Revisá siempre el resultado.'),
           const SizedBox(height: 8),
           if (widget.topics.isEmpty)
             const Card(child: Padding(
               padding: EdgeInsets.all(16),
-              child: Text('Todavía no hay temas. Leé un documento y usá “Detectar / agregar”, o cargá un tema manualmente.'),
+              child: Text('Todavía no hay temas. Cargá el programa y tocá “Analizar materia”, o agregá un tema manualmente.'),
             )),
           ...widget.topics.map((topic) => Card(child: ListTile(
             title: Text(topic.title),
@@ -715,6 +889,8 @@ class _SubjectDocument {
   final String title;
   final String path;
   final String kind;
+  String category;
+  String section;
   String? extractedText;
 
   _SubjectDocument({
@@ -723,6 +899,8 @@ class _SubjectDocument {
     required this.title,
     required this.path,
     required this.kind,
+    this.category = 'material',
+    this.section = '',
     this.extractedText,
   });
 
@@ -732,6 +910,8 @@ class _SubjectDocument {
     'title': title,
     'path': path,
     'kind': kind,
+    'category': category,
+    'section': section,
     'extractedText': extractedText,
   };
 
@@ -741,6 +921,8 @@ class _SubjectDocument {
     title: json['title'] as String? ?? 'Material',
     path: json['path'] as String,
     kind: json['kind'] as String? ?? 'pdf',
+    category: json['category'] as String? ?? 'material',
+    section: json['section'] as String? ?? '',
     extractedText: json['extractedText'] as String?,
   );
 }
