@@ -127,6 +127,7 @@ class LifeRpgApp extends StatefulWidget {
 }
 
 class _LifeRpgAppState extends State<LifeRpgApp> {
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   static const String _missionsKey = 'life_rpg_missions_v1';
   static const String _notesKey = 'life_rpg_notes_v1';
 
@@ -196,8 +197,9 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
     MissionPriority selectedPriority = existing?.priority ?? MissionPriority.medium;
     bool isMain = existing?.isMainQuest ?? false;
 
+    final dialogContext = _navigatorKey.currentState!.overlay!.context;
     showDialog<void>(
-      context: context,
+      context: dialogContext,
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
@@ -576,6 +578,7 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
     ];
 
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: 'LIFE RPG',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
