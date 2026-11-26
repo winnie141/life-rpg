@@ -37,6 +37,7 @@ class MissionItem {
   bool completed;
   int? estimatedMinutes;
   String dayKey;
+  String? subjectId;
 
   MissionItem({
     required this.id,
@@ -48,6 +49,7 @@ class MissionItem {
     required this.completed,
     this.estimatedMinutes,
     required this.dayKey,
+    this.subjectId,
   });
 
   Map<String, dynamic> toJson() => {
@@ -60,6 +62,7 @@ class MissionItem {
         'completed': completed,
         'estimatedMinutes': estimatedMinutes,
         'dayKey': dayKey,
+        'subjectId': subjectId,
       };
 
   factory MissionItem.fromJson(Map<String, dynamic> json) => MissionItem(
@@ -78,6 +81,7 @@ class MissionItem {
         completed: json['completed'] as bool? ?? false,
         estimatedMinutes: json['estimatedMinutes'] as int?,
         dayKey: json['dayKey'] as String? ?? dateToKey(DateTime.now()),
+        subjectId: json['subjectId'] as String?,
       );
 }
 
@@ -198,6 +202,14 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
     );
   }
 
+  Future<void> _saveStudySubjects() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _subjectsKey,
+      jsonEncode(_studySubjects.map((subject) => subject.toJson()).toList()),
+    );
+  }
+
   Future<void> _saveNotes() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
@@ -234,6 +246,7 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
             completed: false,
             estimatedMinutes: draft.estimatedMinutes,
             dayKey: todayKey,
+            subjectId: draft.subjectId,
           )));
     });
     await _saveMissions();
@@ -321,7 +334,7 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
       final parsedMinutes = int.tryParse(minutesCtrl.text.trim()) ?? 45;
       setState(() {
         _studySubjects = parsed;
-        _dailyMinutes = parsedMinutes.clamp(10, 240);
+        _dailyMinutes = parsedMinutes.clamp(10, 240).toInt();
       });
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
@@ -590,8 +603,28 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
               leading: Checkbox(
                 value: m.completed,
                 onChanged: (val) {
-                  setState(() => m.completed = val ?? false);
+                  final completed = val ?? false;
+                  setState(() {
+                    m.completed = completed;
+                    final subjectIndex = _studySubjects.indexWhere(
+                      (subject) => subject.id == m.subjectId,
+                    );
+                    if (subjectIndex >= 0) {
+                      final subject = _studySubjects[subjectIndex];
+                      _studySubjects[subjectIndex] = StudySubject(
+                        id: subject.id,
+                        name: subject.name,
+                        currentTopic: subject.currentTopic,
+                        mastery: completed
+                            ? (subject.mastery + 4).clamp(0, 100).toInt()
+                            : (subject.mastery - 4).clamp(0, 100).toInt(),
+                        lastPracticedAt:
+                            completed ? DateTime.now() : subject.lastPracticedAt,
+                      );
+                    }
+                  });
                   _saveMissions();
+                  _saveStudySubjects();
                 },
               ),
               title: Text(
