@@ -224,7 +224,7 @@ class MissionEngine {
 
   String? _excerpt(String? text) {
     if (text == null || text.trim().isEmpty) return null;
-    final cleaned = text.trim().replaceAll(RegExp(r'\\s+'), ' ');
+    final cleaned = text.trim().replaceAll(RegExp(r'\s+'), ' ');
     return cleaned.length <= 1200 ? cleaned : '${cleaned.substring(0, 1200)}…';
   }
 
