@@ -544,11 +544,12 @@ class _SubjectDetailPageState extends State<_SubjectDetailPage> {
             leading: Icon(doc.kind == 'image' ? Icons.image_outlined : Icons.picture_as_pdf),
             title: Text(doc.title),
             subtitle: Text(doc.extractedText == null ? 'Texto todavía no leído' : 'Texto leído · ${doc.extractedText!.length} caracteres'),
-            onTap: () => widget.onOpenDocument(doc),
+            onTap: () async { await widget.onOpenDocument(doc); if (mounted) setState(() {}); },
             trailing: PopupMenuButton<String>(
-              onSelected: (value) {
-                if (value == 'read') widget.onReadDocument(doc);
-                if (value == 'delete') widget.onDeleteDocument(doc);
+              onSelected: (value) async {
+                if (value == 'read') await widget.onReadDocument(doc);
+                if (value == 'delete') await widget.onDeleteDocument(doc);
+                if (mounted) setState(() {});
               },
               itemBuilder: (_) => const [
                 PopupMenuItem(value: 'read', child: Text('Leer / editar texto')),
