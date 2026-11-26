@@ -44,9 +44,9 @@ jobs:
           target = gradle if gradle.exists() else kotlin
           source = target.read_text()
           if target.suffix == '.kts':
-              line = 'isMinifyEnabled = false; proguardFiles += file("proguard-rules.pro")'
+              line = 'isMinifyEnabled = false; isShrinkResources = false; proguardFiles += file("proguard-rules.pro")'
           else:
-              line = "minifyEnabled false; proguardFiles 'proguard-rules.pro'"
+              line = "minifyEnabled false; shrinkResources false; proguardFiles 'proguard-rules.pro'"
           if line not in source:
               source, count = re.subn(r'release\s*\{', lambda m: m.group(0) + '\n            ' + line, source, count=1)
               if count != 1:
