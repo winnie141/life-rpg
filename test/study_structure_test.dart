@@ -88,3 +88,29 @@ Otro contenido.
     expect(MasteryStage.values, hasLength(4));
   });
 }
+
+
+  group('ProgramTopicParser', () {
+    const parser = ProgramTopicParser();
+
+    test('preserves syllabus order and removes numbering', () {
+      expect(
+        parser.parse('''
+Unidad 1: Límites
+1.1 Continuidad
+2. Derivadas
+• Aplicaciones de la derivada
+'''),
+        ['Límites', 'Continuidad', 'Derivadas', 'Aplicaciones de la derivada'],
+      );
+    });
+
+    test('ignores blank and duplicate lines', () {
+      expect(parser.parse('''
+Integrales
+     
+Integrales
+Integrales definidas
+'''), ['Integrales', 'Integrales definidas']);
+    });
+  });
