@@ -229,7 +229,9 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
   Future<void> _ensureDailyMissions() async {
     if (_studySubjects.isEmpty) return;
     final todayKey = dateToKey(DateTime.now());
-    final alreadyGenerated = _missions.any((m) => m.dayKey == todayKey);
+    final alreadyGenerated = _missions.any(
+      (m) => m.dayKey == todayKey && m.subjectId != null,
+    );
     if (alreadyGenerated) return;
 
     final generated = _missionEngine.generateDaily(
@@ -351,6 +353,13 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
         jsonEncode(_studySubjects.map((s) => s.toJson()).toList()),
       );
       await prefs.setInt(_dailyMinutesKey, _dailyMinutes);
+      final todayKey = dateToKey(DateTime.now());
+      setState(() {
+        _missions.removeWhere(
+          (mission) => mission.dayKey == todayKey && mission.subjectId != null,
+        );
+      });
+      await _saveMissions();
       await _ensureDailyMissions();
     }
     subjectsCtrl.dispose();
