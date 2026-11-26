@@ -25,7 +25,7 @@ class StudySubject {
         id: json['id'] as String,
         name: json['name'] as String? ?? 'Materia',
         currentTopic: json['currentTopic'] as String? ?? '',
-        mastery: (json['mastery'] as num?)?.toInt().clamp(0, 100) ?? 35,
+        mastery: (json['mastery'] as num?)?.toInt().clamp(0, 100).toInt() ?? 35,
         lastPracticedAt: json['lastPracticedAt'] == null
             ? null
             : DateTime.tryParse(json['lastPracticedAt'] as String),
