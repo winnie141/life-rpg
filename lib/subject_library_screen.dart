@@ -309,13 +309,10 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
             format: pdfx.PdfPageImageFormat.jpeg,
             backgroundColor: '#ffffff',
           );
-          if (image == null || image.bytes == null) {
-            continue;
-          }
           final imageFile = File(
             '${tempDirectory.path}/life_rpg_ocr_${DateTime.now().microsecondsSinceEpoch}_$pageNumber.jpg',
           );
-          await imageFile.writeAsBytes(image.bytes!, flush: true);
+          await imageFile.writeAsBytes(image.bytes, flush: true);
           temporaryFiles.add(imageFile);
           final result = await recognizer.processImage(
             InputImage.fromFilePath(imageFile.path),
