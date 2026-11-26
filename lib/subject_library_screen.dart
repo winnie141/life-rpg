@@ -83,6 +83,7 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
         documents: () => _subjectDocuments(subject.id),
         onImport: (kind, camera) => _import(subject, kind, camera: camera),
         onEditTopics: () => _editTopics(subject),
+        onAddManualTopic: () => _manualTopic(subject),
         onOpenTopic: (topic) => _openTopic(subject, topic),
         onEditTopic: _editTopic,
         onDeleteTopic: _deleteTopic,
@@ -347,7 +348,6 @@ class _SubjectLibraryScreenState extends State<SubjectLibraryScreen> {
         ));
       }
     }
-    await _manualTopic(subject);
     await _save();
     if (mounted) setState(() {});
   }
@@ -485,6 +485,7 @@ class _SubjectDetailPage extends StatefulWidget {
   final List<_SubjectDocument> Function() documents;
   final Future<void> Function(String kind, bool camera) onImport;
   final Future<void> Function() onEditTopics;
+  final Future<void> Function() onAddManualTopic;
   final Future<void> Function(StudyTopic topic) onOpenTopic;
   final Future<void> Function(StudyTopic topic) onEditTopic;
   final Future<void> Function(StudyTopic topic) onDeleteTopic;
@@ -498,6 +499,7 @@ class _SubjectDetailPage extends StatefulWidget {
     required this.documents,
     required this.onImport,
     required this.onEditTopics,
+    required this.onAddManualTopic,
     required this.onOpenTopic,
     required this.onEditTopic,
     required this.onDeleteTopic,
@@ -558,8 +560,17 @@ class _SubjectDetailPageState extends State<_SubjectDetailPage> {
           Row(children: [
             Expanded(child: Text('Temas', style: Theme.of(context).textTheme.titleLarge)),
             TextButton.icon(onPressed: () async { await widget.onEditTopics(); if (mounted) setState(() {}); },
-              icon: const Icon(Icons.auto_awesome_outlined), label: const Text('Detectar / agregar')),
+              icon: const Icon(Icons.auto_awesome_outlined), label: const Text('Detectar temas')),
           ]),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () async { await widget.onAddManualTopic(); if (mounted) setState(() {}); },
+              icon: const Icon(Icons.add),
+              label: const Text('Agregar tema manualmente'),
+            ),
+          ),
+          const SizedBox(height: 8),
           const Text('La detección busca títulos y numeraciones. Siempre podés corregir la lista; no interpreta por sí sola el contenido.'),
           const SizedBox(height: 8),
           if (widget.topics.isEmpty)
