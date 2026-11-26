@@ -1108,6 +1108,7 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
         'ENTREGA: una evidencia concreta de lo que hiciste y aprendiste.';
   }
 
+  // ignore: unused_element
   Widget _buildTodayView() {
     final key = dateToKey(_selectedDate);
     final dayMissions = _missions.where((m) => m.dayKey == key).toList();
