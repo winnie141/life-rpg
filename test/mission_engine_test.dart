@@ -113,4 +113,27 @@ void main() {
     expect(missions.single.description, isNot(contains('Biblioteca')));
   });
 
+  test('selects a passage related to the configured topic instead of always taking the beginning', () {
+    final missions = engine.generateDaily(
+      subjects: const [
+        StudySubject(id: 'physics', name: 'Física', currentTopic: 'Dinámica'),
+      ],
+      date: DateTime(2026, 11, 26),
+      availableMinutes: 30,
+      materials: const [
+        StudyMaterial(
+          title: 'Apunte completo',
+          subject: 'Física',
+          topic: 'Dinámica',
+          text: 'Introducción general a la física y sus ramas.\\n\\n'
+              'La segunda ley de Newton establece que la fuerza neta sobre un cuerpo es igual al producto de su masa por su aceleración.\\n\\n'
+              'La óptica estudia la propagación de la luz.',
+        ),
+      ],
+    );
+
+    expect(missions.single.sourceExcerpt, contains('segunda ley de Newton'));
+    expect(missions.single.sourceExcerpt, isNot(contains('Introducción general')));
+  });
+
 }
