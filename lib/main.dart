@@ -50,6 +50,7 @@ class MissionItem {
   String? completionEvidence;
   String? sourceTitle;
   String? sourceExcerpt;
+  String workNotes;
 
   MissionItem({
     required this.id,
@@ -67,6 +68,7 @@ class MissionItem {
     this.completionEvidence,
     this.sourceTitle,
     this.sourceExcerpt,
+    this.workNotes = '',
   });
 
   Map<String, dynamic> toJson() => {
@@ -85,6 +87,7 @@ class MissionItem {
         'completionEvidence': completionEvidence,
         'sourceTitle': sourceTitle,
         'sourceExcerpt': sourceExcerpt,
+        'workNotes': workNotes,
       };
 
   factory MissionItem.fromJson(Map<String, dynamic> json) => MissionItem(
@@ -109,6 +112,7 @@ class MissionItem {
         completionEvidence: json['completionEvidence'] as String?,
         sourceTitle: json['sourceTitle'] as String?,
         sourceExcerpt: json['sourceExcerpt'] as String?,
+        workNotes: json['workNotes'] as String? ?? '',
       );
 }
 
@@ -922,34 +926,175 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
   }
 
   Future<void> _showMissionDetails(MissionItem mission) async {
+    final notes = TextEditingController(text: mission.workNotes);
     await showDialog<void>(
       context: _navigatorKey.currentState!.overlay!.context,
-      builder: (ctx) => AlertDialog(
-        title: Text(mission.title),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
+      builder: (ctx) => Dialog.fullscreen(
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('Misión'),
+            leading: IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
+            actions: [
+              IconButton(
+                tooltip: 'Editar',
+                icon: const Icon(Icons.edit_outlined),
+                onPressed: () { Navigator.pop(ctx); _addOrEditMission(existing: mission); },
+              ),
+            ],
+          ),
+          body: ListView(
+            padding: const EdgeInsets.all(20),
             children: [
-              Text(mission.description),
+              Text(mission.isMainQuest ? 'MISIÓN PRINCIPAL' : 'MISIÓN SECUNDARIA',
+                  style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: 8),
+              Text(mission.title, style: Theme.of(context).textTheme.headlineSmall),
+              const SizedBox(height: 12),
+              Wrap(spacing: 8, children: [
+                Chip(label: Text('Prioridad ' + mission.priority.label)),
+                Chip(label: Text(mission.area.label)),
+                if (mission.estimatedMinutes != null)
+                  Chip(label: Text(mission.estimatedMinutes.toString() + ' min')),
+              ]),
+              const SizedBox(height: 20),
+              _missionSection('Objetivo', 'Qué vas a conseguir', mission.description, Icons.flag_outlined),
+              const SizedBox(height: 16),
+              _missionSection('Cómo realizarla', 'Pasos concretos', _missionInstructions(mission), Icons.route_outlined),
               if (mission.sourceTitle != null) ...[
                 const SizedBox(height: 16),
-                const Divider(),
-                Text('Material utilizado: ${mission.sourceTitle}',
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
-                if ((mission.sourceExcerpt ?? '').isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  SelectableText(mission.sourceExcerpt!),
-                ],
-                const SizedBox(height: 8),
-                const Text('La actividad se basa en el texto extraído de tu Biblioteca. Verificá siempre el documento original si el reconocimiento contiene errores.'),
+                Card(child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('MATERIAL DE REFERENCIA', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Text(mission.sourceTitle!, style: Theme.of(context).textTheme.titleMedium),
+                    if ((mission.sourceExcerpt ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      SelectableText(mission.sourceExcerpt!),
+                    ],
+                    const SizedBox(height: 8),
+                    const Text('Texto extraído de tu Biblioteca. Verificá el documento original si encontrás errores.'),
+                  ]),
+                )),
               ],
+              const SizedBox(height: 20),
+              Text('Tu espacio de trabajo', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 6),
+              const Text('Escribí acá tu explicación, procedimiento, respuesta o dudas. Se guarda dentro de esta misión.'),
+              const SizedBox(height: 10),
+              TextField(
+                controller: notes,
+                minLines: 6,
+                maxLines: 14,
+                decoration: const InputDecoration(
+                  hintText: 'Empezá a trabajar acá...',
+                  border: OutlineInputBorder(),
+                  alignLabelWithHint: true,
+                ),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  mission.workNotes = notes.text;
+                  await _saveMissions();
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Tu trabajo quedó guardado')),
+                  );
+                },
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('Guardar trabajo'),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: mission.completed ? null : () async {
+                  mission.workNotes = notes.text;
+                  await _saveMissions();
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  await _setMissionCompleted(mission, true);
+                },
+                icon: const Icon(Icons.task_alt),
+                label: Text(mission.completed ? 'Misión completada' : 'Completar misión'),
+              ),
+              if (mission.completed)
+                const Padding(padding: EdgeInsets.only(top: 8), child: Text('Esta misión ya está completada.')),
             ],
           ),
         ),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cerrar'))],
       ),
     );
+    notes.dispose();
+  }
+
+  Widget _missionSection(String title, String subtitle, String body, IconData icon) {
+    return Card(child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(icon),
+          const SizedBox(width: 8),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+          ])),
+        ]),
+        const SizedBox(height: 12),
+        Text(body),
+      ]),
+    ));
+  }
+
+  String _missionInstructions(MissionItem mission) {
+    final t = mission.title.toLowerCase();
+    if (t.contains('entender el mecanismo')) {
+      return '1. Identificá qué fenómeno o idea explica el material.\n\n'
+          '2. Buscá qué lo provoca y bajo qué condiciones ocurre.\n\n'
+          '3. Seguí la secuencia: qué sucede primero, qué cambia después y cuál es el resultado.\n\n'
+          '4. Anotá las relaciones, reglas o ecuaciones que conectan esos pasos y qué significa cada una.\n\n'
+          '5. Cerrá el material e intentá explicarlo con tus palabras.\n\n'
+          '6. Volvé a la fuente y comprobá qué explicaste bien y dónde hay huecos.\n\n'
+          'ENTREGA: una explicación ordenada desde la causa hasta el resultado y una duda concreta si algo no quedó claro.';
+    }
+    if (t.contains('recuperación activa') || t.contains('repaso breve')) {
+      return '1. Antes de abrir los apuntes, escribí todo lo que recordás.\n\n'
+          '2. Ordená las ideas y agregá ejemplos, relaciones o fórmulas.\n\n'
+          '3. Abrí el material y compará tu respuesta.\n\n'
+          '4. Marcá lo que olvidaste o confundiste y corregilo.\n\n'
+          'ENTREGA: un resumen corregido que muestre qué recordabas y qué necesitás reforzar.';
+    }
+    if (t.contains('resolver con guía')) {
+      return '1. Elegí un ejemplo o ejercicio del tema.\n\n'
+          '2. Identificá qué te pide y qué datos tenés.\n\n'
+          '3. Seguí el procedimiento y anotá por qué corresponde cada paso.\n\n'
+          '4. Si no hay ejercicios, convertí una afirmación del texto en pregunta y respondela.\n\n'
+          '5. Tapá el ejemplo e intentá reconstruirlo.\n\n'
+          'ENTREGA: un procedimiento explicado, no solamente una cuenta o fórmula.';
+    }
+    if (t.contains('desafío independiente')) {
+      return '1. Cerrá los apuntes y elegí una pregunta o ejercicio.\n\n'
+          '2. Resolvelo sin consultar ejemplos.\n\n'
+          '3. Si te trabás, anotá el punto exacto donde no sabés seguir.\n\n'
+          '4. Consultá el material y corregí tu trabajo.\n\n'
+          'ENTREGA: una resolución propia y el registro de cualquier bloqueo.';
+    }
+    if (t.contains('detectar y corregir errores')) {
+      return '1. Escribí una explicación o resolución breve sin copiar.\n\n'
+          '2. Comparala con el material.\n\n'
+          '3. Buscá el primer error, omisión o paso que no puedas justificar.\n\n'
+          '4. Corregilo y explicá por qué la versión anterior estaba incompleta.\n\n'
+          'ENTREGA: una corrección justificada y una regla para evitar ese error.';
+    }
+    if (t.contains('cierre feynman')) {
+      return '1. Elegí la idea más importante que aprendiste.\n\n'
+          '2. Explicala con palabras simples, como si se la enseñaras a alguien que recién empieza.\n\n'
+          '3. Explicá los términos técnicos.\n\n'
+          '4. Identificá qué parte no podés explicar y convertíla en una pregunta.\n\n'
+          'ENTREGA: una explicación simple y una pregunta concreta.';
+    }
+    return '1. Leé el objetivo y asegurate de entender el resultado esperado.\n\n'
+        '2. Dividí la tarea en pasos pequeños.\n\n'
+        '3. Anotá el procedimiento, explicación o decisión.\n\n'
+        '4. Revisá el resultado y señalá cualquier duda.\n\n'
+        'ENTREGA: una evidencia concreta de lo que hiciste y aprendiste.';
   }
 
   Widget _buildTodayView() {
@@ -1042,6 +1187,11 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  IconButton(
+                    tooltip: 'Abrir misión',
+                    icon: const Icon(Icons.open_in_new),
+                    onPressed: () => _showMissionDetails(m),
+                  ),
                   IconButton(
                     icon: const Icon(Icons.edit),
                     onPressed: () => _addOrEditMission(existing: m),
