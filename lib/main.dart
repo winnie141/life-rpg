@@ -2,13 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-import 'package:google_mlkit_language_id/google_mlkit_language_id.dart';
-import 'package:google_mlkit_translation/google_mlkit_translation.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'mission_engine.dart';
 
 void main() {
@@ -140,16 +139,13 @@ class LibraryNoteItem {
 class LibraryDocumentItem {
   final String id, title, subject, topic, path, kind;
   String? extractedText;
-  String? sourceLanguage;
-  String? translatedText;
-  LibraryDocumentItem({required this.id, required this.title, required this.subject, required this.topic, required this.path, required this.kind, this.extractedText, this.sourceLanguage, this.translatedText});
-  Map<String, dynamic> toJson() => {'id': id, 'title': title, 'subject': subject, 'topic': topic, 'path': path, 'kind': kind, 'extractedText': extractedText, 'sourceLanguage': sourceLanguage, 'translatedText': translatedText};
+  LibraryDocumentItem({required this.id, required this.title, required this.subject, required this.topic, required this.path, required this.kind, this.extractedText});
+  Map<String, dynamic> toJson() => {'id': id, 'title': title, 'subject': subject, 'topic': topic, 'path': path, 'kind': kind, 'extractedText': extractedText};
   factory LibraryDocumentItem.fromJson(Map<String, dynamic> json) => LibraryDocumentItem(
     id: json['id'] as String, title: json['title'] as String? ?? 'Material',
     subject: json['subject'] as String? ?? 'General', topic: json['topic'] as String? ?? '',
     path: json['path'] as String, kind: json['kind'] as String? ?? 'pdf',
-    extractedText: json['extractedText'] as String?, sourceLanguage: json['sourceLanguage'] as String?,
-    translatedText: json['translatedText'] as String?);
+    extractedText: json['extractedText'] as String?);
 }
 
 String dateToKey(DateTime date) {
@@ -739,6 +735,41 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
     } finally { titleCtrl.dispose(); subjectCtrl.dispose(); topicCtrl.dispose(); }
   }
 
+
+  Future<void> _extractTextFromPdf(LibraryDocumentItem item) async {
+    if (_processingDocumentId != null) return;
+    setState(() => _processingDocumentId = item.id);
+    PdfDocument? document;
+    try {
+      document = PdfDocument(inputBytes: await File(item.path).readAsBytes());
+      final text = PdfTextExtractor(document).extractText().trim();
+      if (!mounted) return;
+      setState(() {
+        item.extractedText = text;
+        _processingDocumentId = null;
+      });
+      await _saveDocuments();
+      if (text.isEmpty && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Este PDF no contiene texto seleccionable. Si es un escaneo, por ahora guardalo como imágenes para leerlo.')),
+        );
+      } else {
+        await _showExtractedText(item);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo leer el PDF: ' + error.toString())),
+        );
+      }
+    } finally {
+      document?.dispose();
+      if (mounted && _processingDocumentId == item.id) {
+        setState(() => _processingDocumentId = null);
+      }
+    }
+  }
+
   Future<void> _extractTextFromImage(LibraryDocumentItem item) async {
     if (_processingDocumentId != null) return;
     setState(() => _processingDocumentId = item.id);
@@ -748,32 +779,9 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
       final inputImage = InputImage.fromFilePath(item.path);
       final recognized = await recognizer.processImage(inputImage);
       final text = recognized.text.trim();
-      String? language;
-      String? translation;
-      if (text.length >= 20) {
-        final identifier = LanguageIdentifier(confidenceThreshold: 0.5);
-        try {
-          language = await identifier.identifyLanguage(text);
-        } finally {
-          await identifier.close();
-        }
-        if (language == 'en') {
-          final translator = OnDeviceTranslator(
-            sourceLanguage: TranslateLanguage.english,
-            targetLanguage: TranslateLanguage.spanish,
-          );
-          try {
-            translation = await translator.translateText(text);
-          } finally {
-            await translator.close();
-          }
-        }
-      }
       if (!mounted) return;
       setState(() {
         item.extractedText = text;
-        item.sourceLanguage = language;
-        item.translatedText = translation;
         _processingDocumentId = null;
       });
       await _saveDocuments();
@@ -782,58 +790,11 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
       if (mounted) {
         setState(() => _processingDocumentId = null);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo leer o traducir el material: ' + error.toString())),
+          SnackBar(content: Text('No se pudo leer la imagen: ' + error.toString())),
         );
       }
     } finally {
       await recognizer?.close();
-      if (mounted && _processingDocumentId == item.id) {
-        setState(() => _processingDocumentId = null);
-      }
-    }
-  }
-
-  Future<void> _translateDocumentText(LibraryDocumentItem item) async {
-    final text = item.extractedText?.trim() ?? '';
-    if (text.isEmpty || _processingDocumentId != null) return;
-    setState(() => _processingDocumentId = item.id);
-    LanguageIdentifier? identifier;
-    OnDeviceTranslator? translator;
-    try {
-      identifier = LanguageIdentifier(confidenceThreshold: 0.5);
-      final language = await identifier.identifyLanguage(text);
-      if (language != 'en') {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(language == 'es'
-                ? 'El texto ya está en español.'
-                : 'No pude confirmar que el texto esté en inglés.')),
-          );
-        }
-        return;
-      }
-      translator = OnDeviceTranslator(
-        sourceLanguage: TranslateLanguage.english,
-        targetLanguage: TranslateLanguage.spanish,
-      );
-      final translated = await translator.translateText(text);
-      if (!mounted) return;
-      setState(() {
-        item.sourceLanguage = language;
-        item.translatedText = translated;
-        _processingDocumentId = null;
-      });
-      await _saveDocuments();
-      await _showExtractedText(item);
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo traducir: ' + error.toString())),
-        );
-      }
-    } finally {
-      await identifier?.close();
-      await translator?.close();
       if (mounted && _processingDocumentId == item.id) {
         setState(() => _processingDocumentId = null);
       }
@@ -852,10 +813,8 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (item.sourceLanguage != null)
-                Text('Idioma detectado: ' + (item.sourceLanguage == 'en' ? 'Inglés' : item.sourceLanguage == 'es' ? 'Español' : item.sourceLanguage!)),
               const SizedBox(height: 6),
-              const Text('Texto original'),
+              const Text('Texto reconocido (español)'),
               TextField(
                 controller: controller,
                 minLines: 6,
@@ -883,8 +842,6 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
     if (save == true && mounted) {
       setState(() {
         item.extractedText = controller.text.trim();
-        item.translatedText = null;
-        item.sourceLanguage = null;
       });
       await _saveDocuments();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
@@ -1140,21 +1097,18 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
         subtitle: Text(item.subject + (item.topic.isEmpty ? '' : ' · ' + item.topic) + (item.kind == 'image' ? ' · Imagen' : ' · PDF')),
         onTap: () => _openLibraryDocument(item),
         trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-          if (item.kind == 'image') IconButton(
-            tooltip: item.extractedText == null ? 'Leer texto de la foto' : 'Ver texto leído',
+          IconButton(
+            tooltip: item.extractedText == null ? (item.kind == 'image' ? 'Leer texto de la imagen' : 'Leer texto del PDF') : 'Ver texto leído',
             onPressed: _processingDocumentId == item.id
                 ? null
-                : () => item.extractedText == null ? _extractTextFromImage(item) : _showExtractedText(item),
+                : () => item.extractedText != null
+                    ? _showExtractedText(item)
+                    : item.kind == 'image'
+                        ? _extractTextFromImage(item)
+                        : _extractTextFromPdf(item),
             icon: _processingDocumentId == item.id
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                : Icon(item.extractedText == null ? Icons.text_snippet_outlined : Icons.description_outlined),
-          ),
-          if (item.extractedText != null) IconButton(
-            tooltip: item.translatedText == null ? 'Traducir al español' : 'Ver texto y traducción',
-            onPressed: _processingDocumentId == item.id
-                ? null
-                : () => item.translatedText == null ? _translateDocumentText(item) : _showExtractedText(item),
-            icon: const Icon(Icons.translate),
+                : const Icon(Icons.text_snippet_outlined),
           ),
           IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => _deleteLibraryDocument(item)),
         ]),
