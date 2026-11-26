@@ -680,6 +680,10 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
           'Mapa de capacidades',
           style: Theme.of(context).textTheme.titleLarge,
         ),
+        const SizedBox(height: 8),
+        const Text(
+          'Tu avance se construye con práctica registrada. El porcentaje es una estimación inicial, no una nota ni una certificación.',
+        ),
         const SizedBox(height: 12),
         ...LifeArea.values.map((area) {
           final count = _missions
@@ -687,14 +691,87 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
               .length;
           return Card(
             child: ListTile(
+              leading: Icon(_areaIcon(area)),
               title: Text(area.label),
-              subtitle: const Text('Red de capacidades del área'),
-              trailing: Text('$count completadas'),
+              subtitle: Text(
+                area == LifeArea.knowledge
+                    ? '${_studySubjects.length} materias en tu ruta'
+                    : 'Área preparada para futuras misiones',
+              ),
+              trailing: Text('$count'),
             ),
           );
         }),
+        const SizedBox(height: 12),
+        Text('Ruta de aprendizaje',
+            style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        if (_studySubjects.isEmpty)
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.add_circle_outline),
+              title: const Text('Todavía no hay materias'),
+              subtitle: const Text('Configurá tu ruta para empezar a construir el mapa.'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _configureStudyRoute,
+            ),
+          ),
+        ..._studySubjects.map((subject) {
+          final mastery = subject.mastery.clamp(0, 100);
+          final recent = subject.lastPracticedAt == null
+              ? 'Todavía sin práctica registrada'
+              : 'Última práctica: ${dateToKey(subject.lastPracticedAt!)}';
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(subject.name,
+                            style: Theme.of(context).textTheme.titleMedium),
+                      ),
+                      Text('$mastery%'),
+                    ],
+                  ),
+                  if (subject.currentTopic.trim().isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(subject.currentTopic,
+                        style: Theme.of(context).textTheme.bodyMedium),
+                  ],
+                  const SizedBox(height: 10),
+                  LinearProgressIndicator(value: mastery / 100),
+                  const SizedBox(height: 8),
+                  Text(recent,
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
+            ),
+          );
+        }),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _configureStudyRoute,
+          icon: const Icon(Icons.tune),
+          label: const Text('Editar ruta de aprendizaje'),
+        ),
       ],
     );
+  }
+
+  IconData _areaIcon(LifeArea area) {
+    switch (area) {
+      case LifeArea.knowledge:
+        return Icons.psychology_alt_outlined;
+      case LifeArea.bodyEnergy:
+        return Icons.bolt_outlined;
+      case LifeArea.selfDirection:
+        return Icons.explore_outlined;
+      case LifeArea.practicalLife:
+        return Icons.handyman_outlined;
+    }
   }
 
   Widget _buildLibraryView() {
@@ -744,6 +821,11 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
     final totalCompleted = _missions.where((m) => m.completed).length;
     final activeDays =
         _missions.where((m) => m.completed).map((m) => m.dayKey).toSet().length;
+    final averageMastery = _studySubjects.isEmpty
+        ? 0
+        : (_studySubjects.fold<int>(0, (sum, s) => sum + s.mastery) /
+                _studySubjects.length)
+            .round();
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -762,10 +844,21 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
             trailing: Text('$activeDays'),
           ),
         ),
-        const Card(
+        Card(
           child: ListTile(
-            title:  Text('Modo sin conexión'),
-            subtitle:  Text('Datos guardados localmente en el dispositivo.'),
+            title: const Text('Dominio estimado de tu ruta'),
+            subtitle: Text(
+              _studySubjects.isEmpty
+                  ? 'Configurá materias para comenzar a medir tu progreso.'
+                  : 'Promedio de ${_studySubjects.length} materias. Se actualiza al completar misiones.',
+            ),
+            trailing: Text('$averageMastery%'),
+          ),
+        ),
+        Card(
+          child: ListTile(
+            title: const Text('Modo sin conexión'),
+            subtitle: const Text('Datos guardados localmente en el dispositivo.'),
           ),
         ),
       ],
