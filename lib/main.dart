@@ -224,7 +224,7 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<LifeArea>(
-                      value: selectedArea,
+                      initialValue:,
                       decoration: const InputDecoration(labelText: 'Área'),
                       items: LifeArea.values
                           .map(
@@ -239,7 +239,7 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
                       },
                     ),
                     DropdownButtonFormField<MissionPriority>(
-                      value: selectedPriority,
+                      initialValue:,
                       decoration: const InputDecoration(labelText: 'Prioridad'),
                       items: MissionPriority.values
                           .map(
@@ -558,7 +558,7 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
         ),
         const Card(
           child: ListTile(
-            title: const Text('Modo sin conexión'),
+            title:  Text('Modo sin conexión'),
             subtitle: const Text('Datos guardados localmente en el dispositivo.'),
           ),
         ),
