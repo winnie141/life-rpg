@@ -274,13 +274,22 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
     );
   }
 
-  Future<void> _ensureDailyMissions() async {
+  Future<void> _ensureDailyMissions({bool refresh = false}) async {
     if (_studySubjects.isEmpty) return;
     final todayKey = dateToKey(DateTime.now());
     final alreadyGenerated = _missions.any(
       (m) => m.dayKey == todayKey && m.subjectId != null,
     );
-    if (alreadyGenerated) return;
+    if (alreadyGenerated && !refresh) return;
+    if (refresh) {
+      setState(() {
+        _missions.removeWhere((mission) =>
+            mission.dayKey == todayKey &&
+            mission.subjectId != null &&
+            !mission.completed);
+      });
+      await _saveMissions();
+    }
 
     final materials = <StudyMaterial>[
       ..._documents.where((item) => (item.extractedText ?? '').trim().isNotEmpty).map((item) => StudyMaterial(
@@ -326,6 +335,24 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
           )));
     });
     await _saveMissions();
+  }
+
+  Future<void> _refreshTodayMissionsFromLibrary() async {
+    final hasExtractedMaterial =
+        _documents.any((item) => (item.extractedText ?? '').trim().isNotEmpty) ||
+        _notes.any((item) => item.content.trim().isNotEmpty);
+    if (!hasExtractedMaterial) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Primero agregá un PDF, una foto o una nota con texto en la Biblioteca.')),
+      );
+      return;
+    }
+    await _ensureDailyMissions(refresh: true);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Misiones actualizadas. Tocá una misión para ver su material de referencia.')),
+      );
+    }
   }
 
   Future<void> _configureStudyRoute() async {
@@ -948,6 +975,16 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
           ],
         ),
         Text('Completadas hoy: $completedCount / ${dayMissions.length}'),
+        if (dateToKey(_selectedDate) == dateToKey(DateTime.now()) &&
+            (_documents.any((item) => (item.extractedText ?? '').trim().isNotEmpty) ||
+                _notes.any((item) => item.content.trim().isNotEmpty))) ...[
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _refreshTodayMissionsFromLibrary,
+            icon: const Icon(Icons.auto_awesome),
+            label: const Text('Actualizar misiones con Biblioteca'),
+          ),
+        ],
         const SizedBox(height: 12),
         if (dayMissions.isEmpty)
           Card(
