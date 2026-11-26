@@ -12,7 +12,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(find.text('LIFE RPG'), findsOneWidget);
-    expect(find.text('Materias'), findsOneWidget);
+    expect(find.text('Materias'), findsNWidgets(2));
     expect(find.text('Física'), findsOneWidget);
     expect(find.text('Análisis Matemático'), findsOneWidget);
     expect(find.text('Álgebra'), findsOneWidget);
