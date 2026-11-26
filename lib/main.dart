@@ -48,6 +48,8 @@ class MissionItem {
   int masteryGain;
   bool progressRecorded;
   String? completionEvidence;
+  String? sourceTitle;
+  String? sourceExcerpt;
 
   MissionItem({
     required this.id,
@@ -63,6 +65,8 @@ class MissionItem {
     this.masteryGain = 0,
     this.progressRecorded = false,
     this.completionEvidence,
+    this.sourceTitle,
+    this.sourceExcerpt,
   });
 
   Map<String, dynamic> toJson() => {
@@ -79,6 +83,8 @@ class MissionItem {
         'masteryGain': masteryGain,
         'progressRecorded': progressRecorded,
         'completionEvidence': completionEvidence,
+        'sourceTitle': sourceTitle,
+        'sourceExcerpt': sourceExcerpt,
       };
 
   factory MissionItem.fromJson(Map<String, dynamic> json) => MissionItem(
@@ -101,6 +107,8 @@ class MissionItem {
         masteryGain: json['masteryGain'] as int? ?? 0,
         progressRecorded: json['progressRecorded'] as bool? ?? false,
         completionEvidence: json['completionEvidence'] as String?,
+        sourceTitle: json['sourceTitle'] as String?,
+        sourceExcerpt: json['sourceExcerpt'] as String?,
       );
 }
 
@@ -274,10 +282,25 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
     );
     if (alreadyGenerated) return;
 
+    final materials = <StudyMaterial>[
+      ..._documents.where((item) => (item.extractedText ?? '').trim().isNotEmpty).map((item) => StudyMaterial(
+            title: item.title,
+            subject: item.subject,
+            topic: item.topic,
+            text: item.extractedText!,
+          )),
+      ..._notes.where((item) => item.content.trim().isNotEmpty).map((item) => StudyMaterial(
+            title: item.title,
+            subject: item.subject,
+            topic: item.topic,
+            text: item.content,
+          )),
+    ];
     final generated = _missionEngine.generateDaily(
       subjects: _studySubjects,
       date: DateTime.now(),
       availableMinutes: _dailyMinutes,
+      materials: materials,
     );
     if (generated.isEmpty) return;
 
@@ -298,6 +321,8 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
             dayKey: todayKey,
             subjectId: draft.subjectId,
             masteryGain: draft.masteryGain,
+            sourceTitle: draft.sourceTitle,
+            sourceExcerpt: draft.sourceExcerpt,
           )));
     });
     await _saveMissions();
@@ -857,6 +882,37 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
     try { final file = File(item.path); if (await file.exists()) await file.delete(); } catch (_) {}
   }
 
+  Future<void> _showMissionDetails(MissionItem mission) async {
+    await showDialog<void>(
+      context: _navigatorKey.currentState!.overlay!.context,
+      builder: (ctx) => AlertDialog(
+        title: Text(mission.title),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(mission.description),
+              if (mission.sourceTitle != null) ...[
+                const SizedBox(height: 16),
+                const Divider(),
+                Text('Material utilizado: ${mission.sourceTitle}',
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                if ((mission.sourceExcerpt ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  SelectableText(mission.sourceExcerpt!),
+                ],
+                const SizedBox(height: 8),
+                const Text('La actividad se basa en el texto extraído de tu Biblioteca. Verificá siempre el documento original si el reconocimiento contiene errores.'),
+              ],
+            ],
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cerrar'))],
+      ),
+    );
+  }
+
   Widget _buildTodayView() {
     final key = dateToKey(_selectedDate);
     final dayMissions = _missions.where((m) => m.dayKey == key).toList();
@@ -916,6 +972,7 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
         ...dayMissions.map(
           (m) => Card(
             child: ListTile(
+              onTap: () => _showMissionDetails(m),
               leading: Checkbox(
                 value: m.completed,
                 onChanged: (val) => _setMissionCompleted(m, val ?? false),
@@ -930,7 +987,8 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
               subtitle: Text(
                 '${m.area.label} · Prioridad ${m.priority.label}'
                 '${m.estimatedMinutes != null ? " · ${m.estimatedMinutes} min" : ""}'
-                '${m.completionEvidence == null ? "" : " · ${_evidenceLabel(m.completionEvidence!)}"}',
+                '${m.completionEvidence == null ? "" : " · ${_evidenceLabel(m.completionEvidence!)}"}'
+                '${m.sourceTitle == null ? "" : " · Fuente: ${m.sourceTitle}"}',
               ),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
