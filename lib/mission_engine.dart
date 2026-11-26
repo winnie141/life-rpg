@@ -109,7 +109,7 @@ class MissionEngine {
 
     final sourceIntro = chosenMaterial == null
         ? ''
-        : 'Usá como fuente "${chosenMaterial.title}" (Biblioteca). ';
+        : 'Trabajá directamente con el fragmento seleccionado de "${chosenMaterial.title}". ';
     final main = switch (phase) {
       0 => GeneratedMission(
           title: 'Recuperación activa: ${chosen.name}',
@@ -118,7 +118,7 @@ class MissionEngine {
               : '${sourceIntro}Leé el apartado sobre $topic, cerrá el material y reconstruí con tus palabras las ideas principales. Después compará y corregí lo que faltó.',
           subjectId: chosen.id,
           sourceTitle: chosenMaterial?.title,
-          sourceExcerpt: _excerpt(chosenMaterial?.text),
+          sourceExcerpt: _focusPassage(chosenMaterial, topic),
           estimatedMinutes: _mainMinutes(availableMinutes),
           isMainQuest: true,
           masteryGain: 3,
@@ -130,7 +130,7 @@ class MissionEngine {
               : '${sourceIntro}Explicá $topic con tus palabras. Identificá las ideas, relaciones y mecanismos que aparecen en el texto; señalá qué parte de la fuente respalda cada explicación.',
           subjectId: chosen.id,
           sourceTitle: chosenMaterial?.title,
-          sourceExcerpt: _excerpt(chosenMaterial?.text),
+          sourceExcerpt: _focusPassage(chosenMaterial, topic),
           estimatedMinutes: _mainMinutes(availableMinutes),
           isMainQuest: true,
           masteryGain: 3,
@@ -142,7 +142,7 @@ class MissionEngine {
               : '${sourceIntro}Buscá en el material un ejemplo, procedimiento o afirmación sobre $topic. Reconstruí el razonamiento paso a paso y anotá por qué se hace cada paso. Si no hay ejercicios, convertí una afirmación del texto en una pregunta y respondela usando la fuente.',
           subjectId: chosen.id,
           sourceTitle: chosenMaterial?.title,
-          sourceExcerpt: _excerpt(chosenMaterial?.text),
+          sourceExcerpt: _focusPassage(chosenMaterial, topic),
           estimatedMinutes: _mainMinutes(availableMinutes),
           isMainQuest: true,
           masteryGain: 4,
@@ -154,7 +154,7 @@ class MissionEngine {
               : '${sourceIntro}Sin releer, formulá una pregunta importante sobre $topic y respondela de memoria. Después contrastá la respuesta con la fuente y anotá cualquier diferencia.',
           subjectId: chosen.id,
           sourceTitle: chosenMaterial?.title,
-          sourceExcerpt: _excerpt(chosenMaterial?.text),
+          sourceExcerpt: _focusPassage(chosenMaterial, topic),
           estimatedMinutes: _mainMinutes(availableMinutes),
           isMainQuest: true,
           masteryGain: 5,
@@ -166,7 +166,7 @@ class MissionEngine {
               : '${sourceIntro}Escribí una explicación breve de $topic y comparala con el material. Detectá una omisión, contradicción o paso que no puedas justificar; corregilo citando la parte relevante de la fuente.',
           subjectId: chosen.id,
           sourceTitle: chosenMaterial?.title,
-          sourceExcerpt: _excerpt(chosenMaterial?.text),
+          sourceExcerpt: _focusPassage(chosenMaterial, topic),
           estimatedMinutes: _mainMinutes(availableMinutes),
           isMainQuest: true,
           masteryGain: 4,
@@ -184,7 +184,7 @@ class MissionEngine {
             : 'Usá "${secondMaterial.title}" de la Biblioteca. Formulá 3 preguntas sobre ${second.currentTopic.trim().isEmpty ? 'el tema' : second.currentTopic.trim()}, respondelas sin mirar y después verificá cada respuesta con la fuente.',
         subjectId: second.id,
         sourceTitle: secondMaterial?.title,
-        sourceExcerpt: _excerpt(secondMaterial?.text),
+        sourceExcerpt: _focusPassage(secondMaterial, second.currentTopic),
         estimatedMinutes: 10,
         isMainQuest: false,
         masteryGain: 2,
@@ -222,10 +222,48 @@ class MissionEngine {
     return matching.first;
   }
 
-  String? _excerpt(String? text) {
-    if (text == null || text.trim().isEmpty) return null;
-    final cleaned = text.trim().replaceAll(RegExp(r'\s+'), ' ');
-    return cleaned.length <= 1200 ? cleaned : '${cleaned.substring(0, 1200)}…';
+  /// Selects a real passage from the uploaded source, preferring paragraphs
+  /// that contain words from the configured topic. It does not invent content.
+  String? _focusPassage(StudyMaterial? material, String topic) {
+    if (material == null || material.text.trim().isEmpty) return null;
+    final normalized = material.text
+        .replaceAll('\r', '')
+        .replaceAll(RegExp(r'[ \t]+'), ' ')
+        .trim();
+    final paragraphs = normalized
+        .split(RegExp(r'\n\s*\n|\n'))
+        .map((part) => part.trim().replaceAll(RegExp(r'\s+'), ' '))
+        .where((part) => part.length >= 45)
+        .toList();
+    final candidates = paragraphs.isNotEmpty
+        ? paragraphs
+        : normalized
+            .split(RegExp(r'(?<=[.!?])\s+'))
+            .map((part) => part.trim())
+            .where((part) => part.length >= 35)
+            .toList();
+    if (candidates.isEmpty) {
+      return normalized.length <= 850
+          ? normalized
+          : '${normalized.substring(0, 850)}…';
+    }
+
+    final keywords = topic
+        .toLowerCase()
+        .split(RegExp(r'[^a-záéíóúüñ0-9]+'))
+        .where((word) => word.length >= 4)
+        .toSet();
+    candidates.sort((a, b) {
+      int score(String value) => keywords
+          .where((word) => value.toLowerCase().contains(word))
+          .length;
+      final byTopic = score(b).compareTo(score(a));
+      return byTopic != 0 ? byTopic : b.length.compareTo(a.length);
+    });
+    final selected = candidates.first;
+    return selected.length <= 850
+        ? selected
+        : '${selected.substring(0, 850)}…';
   }
 
   int _mainMinutes(int available) => available >= 30 ? 25 : available;
