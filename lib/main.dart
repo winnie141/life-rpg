@@ -681,7 +681,6 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
     );
   }
 
-
   Future<void> _importPdf() async {
     final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['pdf']);
     if (result == null || result.files.single.path == null) return;
@@ -689,367 +688,13 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
   }
 
   Future<void> _importPhoto({bool useCamera = false}) async {
-    final XFile? photo = useCamera
-      ? await _imagePicker.pickImage(source: ImageSource.camera, imageQuality: 90)
-      : await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 90);
+    final photo = await _imagePicker.pickImage(source: useCamera ? ImageSource.camera : ImageSource.gallery, imageQuality: 90);
     if (photo == null) return;
     await _storeLibraryFile(sourcePath: photo.path, originalName: photo.name, kind: 'image');
   }
 
   Future<void> _storeLibraryFile({required String sourcePath, required String originalName, required String kind}) async {
-    final titleCtrl = TextEditingController(text: originalName.replaceAll(RegExp(r'\.[^.]+
-    final key = dateToKey(_selectedDate);
-    final dayMissions = _missions.where((m) => m.dayKey == key).toList();
-    final completedCount = dayMissions.where((m) => m.completed).length;
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Día: $key',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            Row(
-              children: [
-                IconButton(
-                  onPressed: () => setState(() {
-                    _selectedDate =
-                        _selectedDate.subtract(const Duration(days: 1));
-                  }),
-                  icon: const Icon(Icons.chevron_left),
-                ),
-                IconButton(
-                  onPressed: () => setState(() {
-                    _selectedDate = _selectedDate.add(const Duration(days: 1));
-                  }),
-                  icon: const Icon(Icons.chevron_right),
-                ),
-              ],
-            ),
-          ],
-        ),
-        Text('Completadas hoy: $completedCount / ${dayMissions.length}'),
-        const SizedBox(height: 12),
-        if (dayMissions.isEmpty)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Todavía no hay una ruta configurada. Configurá tus materias y la app va a generar misiones según tus prioridades.',
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton.icon(
-                    onPressed: _configureStudyRoute,
-                    icon: const Icon(Icons.auto_awesome),
-                    label: const Text('Configurar mi ruta'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ...dayMissions.map(
-          (m) => Card(
-            child: ListTile(
-              leading: Checkbox(
-                value: m.completed,
-                onChanged: (val) => _setMissionCompleted(m, val ?? false),
-              ),
-              title: Text(
-                '${m.isMainQuest ? "[Principal] " : ""}${m.title}',
-                style: TextStyle(
-                  decoration:
-                      m.completed ? TextDecoration.lineThrough : null,
-                ),
-              ),
-              subtitle: Text(
-                '${m.area.label} · Prioridad ${m.priority.label}'
-                '${m.estimatedMinutes != null ? " · ${m.estimatedMinutes} min" : ""}'
-                '${m.completionEvidence == null ? "" : " · ${_evidenceLabel(m.completionEvidence!)}"}',
-              ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.edit),
-                    onPressed: () => _addOrEditMission(existing: m),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete),
-                    onPressed: () {
-                      setState(() => _missions.removeWhere((x) => x.id == m.id));
-                      _saveMissions();
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _evidenceLabel(String value) {
-    switch (value) {
-      case 'independent':
-        return 'Resuelta sin ayuda';
-      case 'withHints':
-        return 'Resuelta con pistas';
-      case 'withExample':
-        return 'Resuelta con ejemplo';
-      default:
-        return 'Evidencia registrada';
-    }
-  }
-
-  Widget _buildMapView() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text(
-          'Mapa de capacidades',
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Tu avance se construye con práctica registrada. El porcentaje es una estimación inicial, no una nota ni una certificación.',
-        ),
-        const SizedBox(height: 12),
-        ...LifeArea.values.map((area) {
-          final count = _missions
-              .where((m) => m.area == area && m.completed)
-              .length;
-          return Card(
-            child: ListTile(
-              leading: Icon(_areaIcon(area)),
-              title: Text(area.label),
-              subtitle: Text(
-                area == LifeArea.knowledge
-                    ? '${_studySubjects.length} materias en tu ruta'
-                    : 'Área preparada para futuras misiones',
-              ),
-              trailing: Text('$count'),
-            ),
-          );
-        }),
-        const SizedBox(height: 12),
-        Text('Ruta de aprendizaje',
-            style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        if (_studySubjects.isEmpty)
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.add_circle_outline),
-              title: const Text('Todavía no hay materias'),
-              subtitle: const Text('Configurá tu ruta para empezar a construir el mapa.'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: _configureStudyRoute,
-            ),
-          ),
-        ..._studySubjects.map((subject) {
-          final mastery = subject.mastery.clamp(0, 100);
-          final recent = subject.lastPracticedAt == null
-              ? 'Todavía sin práctica registrada'
-              : 'Última práctica: ${dateToKey(subject.lastPracticedAt!)}';
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(subject.name,
-                            style: Theme.of(context).textTheme.titleMedium),
-                      ),
-                      Text('$mastery%'),
-                    ],
-                  ),
-                  if (subject.currentTopic.trim().isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(subject.currentTopic,
-                        style: Theme.of(context).textTheme.bodyMedium),
-                  ],
-                  const SizedBox(height: 10),
-                  LinearProgressIndicator(value: mastery / 100),
-                  const SizedBox(height: 8),
-                  Text(recent,
-                      style: Theme.of(context).textTheme.bodySmall),
-                ],
-              ),
-            ),
-          );
-        }),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: _configureStudyRoute,
-          icon: const Icon(Icons.tune),
-          label: const Text('Editar ruta de aprendizaje'),
-        ),
-      ],
-    );
-  }
-
-  IconData _areaIcon(LifeArea area) {
-    switch (area) {
-      case LifeArea.knowledge:
-        return Icons.psychology_alt_outlined;
-      case LifeArea.bodyEnergy:
-        return Icons.bolt_outlined;
-      case LifeArea.selfDirection:
-        return Icons.explore_outlined;
-      case LifeArea.practicalLife:
-        return Icons.handyman_outlined;
-    }
-  }
-
-  Widget _buildLibraryView() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text('Biblioteca', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 6),
-        const Text('Guardá tus apuntes, guías, parciales y fotos. Los archivos quedan en este dispositivo.'),
-        const SizedBox(height: 12),
-        Wrap(spacing: 8, runSpacing: 8, children: [
-          FilledButton.icon(onPressed: _importPdf, icon: const Icon(Icons.picture_as_pdf), label: const Text('Subir PDF')),
-          OutlinedButton.icon(onPressed: () => _importPhoto(), icon: const Icon(Icons.photo_library_outlined), label: const Text('Elegir foto')),
-          OutlinedButton.icon(onPressed: () => _importPhoto(useCamera: true), icon: const Icon(Icons.camera_alt_outlined), label: const Text('Sacar foto')),
-          OutlinedButton.icon(onPressed: _addNote, icon: const Icon(Icons.edit_note), label: const Text('Nueva nota')),
-        ]),
-        const SizedBox(height: 16),
-        if (_documents.isEmpty && _notes.isEmpty)
-          const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('Tu biblioteca está vacía. Podés empezar subiendo un PDF o una foto de tus apuntes.'))),
-        if (_documents.isNotEmpty) Text('Materiales (${_documents.length})', style: Theme.of(context).textTheme.titleMedium),
-        ..._documents.map((item) => Card(child: ListTile(
-          leading: item.kind == 'image'
-            ? ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.file(File(item.path), width: 48, height: 56, fit: BoxFit.cover))
-            : const Icon(Icons.picture_as_pdf, size: 34),
-          title: Text(item.title),
-          subtitle: Text('${item.subject}${item.topic.isEmpty ? '' : ' · ${item.topic}'} · ${item.kind == 'image' ? 'Imagen' : 'PDF'}'),
-          onTap: () => _openLibraryDocument(item),
-          trailing: IconButton(tooltip: 'Eliminar material', icon: const Icon(Icons.delete_outline), onPressed: () => _deleteLibraryDocument(item)),
-        ))),
-        if (_notes.isNotEmpty) Text('Notas escritas', style: Theme.of(context).textTheme.titleMedium),
-        ..._notes.map((n) => Card(child: ListTile(
-          title: Text(n.title), subtitle: Text('${n.subject} · ${n.topic}\\n${n.content}'), isThreeLine: true,
-          trailing: IconButton(icon: const Icon(Icons.delete), onPressed: () {
-            setState(() => _notes.removeWhere((x) => x.id == n.id)); _saveNotes();
-          }),
-        ))),
-      ],
-    );
-  }
-
-  Widget _buildProfileView() {
-    final totalCompleted = _missions.where((m) => m.completed).length;
-    final activeDays =
-        _missions.where((m) => m.completed).map((m) => m.dayKey).toSet().length;
-    final averageMastery = _studySubjects.isEmpty
-        ? 0
-        : (_studySubjects.fold<int>(0, (sum, s) => sum + s.mastery) /
-                _studySubjects.length)
-            .round();
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text('Perfil', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 12),
-        Card(
-          child: ListTile(
-            title: const Text('Misiones completadas en total'),
-            trailing: Text('$totalCompleted'),
-          ),
-        ),
-        Card(
-          child: ListTile(
-            title: const Text('Días activos registrados'),
-            trailing: Text('$activeDays'),
-          ),
-        ),
-        Card(
-          child: ListTile(
-            title: const Text('Dominio estimado de tu ruta'),
-            subtitle: Text(
-              _studySubjects.isEmpty
-                  ? 'Configurá materias para comenzar a medir tu progreso.'
-                  : 'Promedio de ${_studySubjects.length} materias. Se actualiza al completar misiones.',
-            ),
-            trailing: Text('$averageMastery%'),
-          ),
-        ),
-        Card(
-          child: ListTile(
-            title: const Text('Modo sin conexión'),
-            subtitle: const Text('Datos guardados localmente en el dispositivo.'),
-          ),
-        ),
-      ],
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final screens = [
-      _buildTodayView(),
-      _buildMapView(),
-      _buildLibraryView(),
-      _buildProfileView(),
-    ];
-
-    return MaterialApp(
-      navigatorKey: _navigatorKey,
-      title: 'LIFE RPG',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-        useMaterial3: true,
-      ),
-      home: Scaffold(
-        appBar: AppBar(
-          title: const Text('LIFE RPG'),
-          actions: [
-            IconButton(
-              tooltip: 'Configurar ruta',
-              onPressed: _configureStudyRoute,
-              icon: const Icon(Icons.tune),
-            ),
-          ],
-        ),
-        body: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : screens[_selectedIndex],
-        floatingActionButton: _selectedIndex == 0
-            ? FloatingActionButton(
-                onPressed: () => _addOrEditMission(),
-                child: const Icon(Icons.add),
-              )
-            : null,
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _selectedIndex,
-          onDestinationSelected: (idx) => setState(() => _selectedIndex = idx),
-          destinations: const [
-            NavigationDestination(icon: Icon(Icons.today), label: 'Hoy'),
-            NavigationDestination(icon: Icon(Icons.hub), label: 'Mapa'),
-            NavigationDestination(
-              icon: Icon(Icons.library_books),
-              label: 'Biblioteca',
-            ),
-            NavigationDestination(icon: Icon(Icons.person), label: 'Perfil'),
-          ],
-        ),
-      ),
-    );
-  }
-}
-), ''));
+    final titleCtrl = TextEditingController(text: originalName);
     final subjectCtrl = TextEditingController();
     final topicCtrl = TextEditingController();
     final accepted = await showDialog<bool>(
@@ -1067,37 +712,28 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
         ],
       ),
     );
-    if (accepted != true || !mounted) {
-      titleCtrl.dispose(); subjectCtrl.dispose(); topicCtrl.dispose(); return;
-    }
+    if (accepted != true || !mounted) { titleCtrl.dispose(); subjectCtrl.dispose(); topicCtrl.dispose(); return; }
     try {
       final directory = await getApplicationDocumentsDirectory();
-      final folder = Directory('${directory.path}/library');
+      final folder = Directory(directory.path + '/library');
       if (!await folder.exists()) await folder.create(recursive: true);
       final id = DateTime.now().microsecondsSinceEpoch.toString();
-      final extension = originalName.contains('.') ? originalName.substring(originalName.lastIndexOf('.')) : (kind == 'image' ? '.jpg' : '.pdf');
-      final savedPath = '${folder.path}/$id$extension';
+      final dot = originalName.lastIndexOf('.');
+      final extension = dot >= 0 ? originalName.substring(dot) : (kind == 'image' ? '.jpg' : '.pdf');
+      final savedPath = folder.path + '/' + id + extension;
       await File(sourcePath).copy(savedPath);
-      setState(() => _documents.insert(0, LibraryDocumentItem(
-        id: id, title: titleCtrl.text.trim().isEmpty ? originalName : titleCtrl.text.trim(),
-        subject: subjectCtrl.text.trim().isEmpty ? 'General' : subjectCtrl.text.trim(),
-        topic: topicCtrl.text.trim(), path: savedPath, kind: kind)));
+      setState(() => _documents.insert(0, LibraryDocumentItem(id: id, title: titleCtrl.text.trim().isEmpty ? originalName : titleCtrl.text.trim(), subject: subjectCtrl.text.trim().isEmpty ? 'General' : subjectCtrl.text.trim(), topic: topicCtrl.text.trim(), path: savedPath, kind: kind)));
       await _saveDocuments();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Material guardado en tu dispositivo')));
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('No se pudo importar el archivo: $error')));
-    } finally {
-      titleCtrl.dispose(); subjectCtrl.dispose(); topicCtrl.dispose();
-    }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('No se pudo importar el archivo: ' + error.toString())));
+    } finally { titleCtrl.dispose(); subjectCtrl.dispose(); topicCtrl.dispose(); }
   }
 
   Future<void> _openLibraryDocument(LibraryDocumentItem item) async {
     if (item.kind == 'image') {
-      await showDialog<void>(context: _navigatorKey.currentState!.overlay!.context,
-        builder: (ctx) => Dialog(child: InteractiveViewer(child: Image.file(File(item.path), fit: BoxFit.contain))));
-    } else {
-      await OpenFilex.open(item.path);
-    }
+      await showDialog<void>(context: _navigatorKey.currentState!.overlay!.context, builder: (ctx) => Dialog(child: InteractiveViewer(child: Image.file(File(item.path), fit: BoxFit.contain))));
+    } else { await OpenFilex.open(item.path); }
   }
 
   Future<void> _deleteLibraryDocument(LibraryDocumentItem item) async {
@@ -1320,46 +956,30 @@ class _LifeRpgAppState extends State<LifeRpgApp> {
   }
 
   Widget _buildLibraryView() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Biblioteca', style: Theme.of(context).textTheme.titleLarge),
-            FilledButton.icon(
-              onPressed: _addNote,
-              icon: const Icon(Icons.add),
-              label: const Text('Nueva nota'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        if (_notes.isEmpty)
-          const Card(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('Todavía no cargaste apuntes o temas.'),
-            ),
-          ),
-        ..._notes.map(
-          (n) => Card(
-            child: ListTile(
-              title: Text(n.title),
-              subtitle: Text('${n.subject} · ${n.topic}\n${n.content}'),
-              isThreeLine: true,
-              trailing: IconButton(
-                icon: const Icon(Icons.delete),
-                onPressed: () {
-                  setState(() => _notes.removeWhere((x) => x.id == n.id));
-                  _saveNotes();
-                },
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
+    return ListView(padding: const EdgeInsets.all(16), children: [
+      Text('Biblioteca', style: Theme.of(context).textTheme.titleLarge),
+      const SizedBox(height: 6),
+      const Text('Guardá apuntes, guías, parciales y fotos. Los archivos quedan en este dispositivo.'),
+      const SizedBox(height: 12),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        FilledButton.icon(onPressed: _importPdf, icon: const Icon(Icons.picture_as_pdf), label: const Text('Subir PDF')),
+        OutlinedButton.icon(onPressed: () => _importPhoto(), icon: const Icon(Icons.photo_library_outlined), label: const Text('Elegir foto')),
+        OutlinedButton.icon(onPressed: () => _importPhoto(useCamera: true), icon: const Icon(Icons.camera_alt_outlined), label: const Text('Sacar foto')),
+        OutlinedButton.icon(onPressed: _addNote, icon: const Icon(Icons.edit_note), label: const Text('Nueva nota')),
+      ]),
+      const SizedBox(height: 16),
+      if (_documents.isEmpty && _notes.isEmpty) const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('Tu biblioteca está vacía. Subí un PDF o una foto para empezar.'))),
+      if (_documents.isNotEmpty) Text('Materiales (' + _documents.length.toString() + ')', style: Theme.of(context).textTheme.titleMedium),
+      ..._documents.map((item) => Card(child: ListTile(
+        leading: item.kind == 'image' ? ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.file(File(item.path), width: 48, height: 56, fit: BoxFit.cover)) : const Icon(Icons.picture_as_pdf, size: 34),
+        title: Text(item.title),
+        subtitle: Text(item.subject + (item.topic.isEmpty ? '' : ' · ' + item.topic) + (item.kind == 'image' ? ' · Imagen' : ' · PDF')),
+        onTap: () => _openLibraryDocument(item),
+        trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => _deleteLibraryDocument(item)),
+      ))),
+      if (_notes.isNotEmpty) Text('Notas escritas', style: Theme.of(context).textTheme.titleMedium),
+      ..._notes.map((n) => Card(child: ListTile(title: Text(n.title), subtitle: Text(n.subject + ' · ' + n.topic + '\n' + n.content), isThreeLine: true, trailing: IconButton(icon: const Icon(Icons.delete), onPressed: () { setState(() => _notes.removeWhere((x) => x.id == n.id)); _saveNotes(); })))),
+    ]);
   }
 
   Widget _buildProfileView() {
